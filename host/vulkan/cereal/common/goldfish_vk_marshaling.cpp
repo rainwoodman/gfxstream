@@ -20969,6 +20969,42 @@ void unmarshal_VkDebugMetadataGuestThreadIdGOOGLE(
     vkStream->read((uint64_t*)&forUnmarshaling->id, sizeof(uint64_t));
 }
 
+void marshal_VkGuestCapabilitiesGOOGLE(VulkanStream* vkStream, VkStructureType rootType,
+                                       const VkGuestCapabilitiesGOOGLE* forMarshaling) {
+    (void)rootType;
+    vkStream->write((VkStructureType*)&forMarshaling->sType, sizeof(VkStructureType));
+    if (rootType == VK_STRUCTURE_TYPE_MAX_ENUM) {
+        rootType = forMarshaling->sType;
+    }
+    marshal_extension_struct(vkStream, rootType, forMarshaling->pNext);
+    vkStream->write((VkGuestCapabilityFlagsGOOGLE*)&forMarshaling->capabilities,
+                    sizeof(VkGuestCapabilityFlagsGOOGLE));
+}
+
+void unmarshal_VkGuestCapabilitiesGOOGLE(VulkanStream* vkStream, VkStructureType rootType,
+                                         VkGuestCapabilitiesGOOGLE* forUnmarshaling) {
+    (void)rootType;
+    vkStream->read((VkStructureType*)&forUnmarshaling->sType, sizeof(VkStructureType));
+    if (rootType == VK_STRUCTURE_TYPE_MAX_ENUM) {
+        rootType = forUnmarshaling->sType;
+    }
+    size_t pNext_size;
+    pNext_size = vkStream->getBe32();
+    forUnmarshaling->pNext = nullptr;
+    if (pNext_size) {
+        vkStream->alloc((void**)&forUnmarshaling->pNext, sizeof(VkStructureType));
+        vkStream->read((void*)forUnmarshaling->pNext, sizeof(VkStructureType));
+        VkStructureType extType = *(VkStructureType*)(forUnmarshaling->pNext);
+        vkStream->alloc((void**)&forUnmarshaling->pNext,
+                        goldfish_vk_extension_struct_size_with_stream_features(
+                            vkStream->getFeatureBits(), rootType, forUnmarshaling->pNext));
+        *(VkStructureType*)forUnmarshaling->pNext = extType;
+        unmarshal_extension_struct(vkStream, rootType, (void*)(forUnmarshaling->pNext));
+    }
+    vkStream->read((VkGuestCapabilityFlagsGOOGLE*)&forUnmarshaling->capabilities,
+                   sizeof(VkGuestCapabilityFlagsGOOGLE));
+}
+
 void marshal_VkDebugMetadataGOOGLE(VulkanStream* vkStream, VkStructureType rootType,
                                    const VkDebugMetadataGOOGLE* forMarshaling) {
     (void)rootType;
@@ -22745,6 +22781,12 @@ void marshal_extension_struct(VulkanStream* vkStream, VkStructureType rootType,
                 reinterpret_cast<const VkDebugMetadataGuestThreadIdGOOGLE*>(structExtension));
             break;
         }
+        case VK_STRUCTURE_TYPE_GUEST_CAPABILITIES_GOOGLE: {
+            marshal_VkGuestCapabilitiesGOOGLE(
+                vkStream, rootType,
+                reinterpret_cast<const VkGuestCapabilitiesGOOGLE*>(structExtension));
+            break;
+        }
 #endif
 #ifdef VK_EXT_border_color_swizzle
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT: {
@@ -24383,6 +24425,12 @@ void unmarshal_extension_struct(VulkanStream* vkStream, VkStructureType rootType
                 reinterpret_cast<VkDebugMetadataGuestThreadIdGOOGLE*>(structExtension_out));
             break;
         }
+        case VK_STRUCTURE_TYPE_GUEST_CAPABILITIES_GOOGLE: {
+            unmarshal_VkGuestCapabilitiesGOOGLE(
+                vkStream, rootType,
+                reinterpret_cast<VkGuestCapabilitiesGOOGLE*>(structExtension_out));
+            break;
+        }
 #endif
 #ifdef VK_EXT_border_color_swizzle
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT: {
@@ -25028,9 +25076,25 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkGetPhysicalDeviceSparseImageFormatProperties2KHR";
         }
 #endif
+#ifdef VK_KHR_device_group
+        case OP_vkGetDeviceGroupPeerMemoryFeaturesKHR: {
+            return "OP_vkGetDeviceGroupPeerMemoryFeaturesKHR";
+        }
+        case OP_vkCmdSetDeviceMaskKHR: {
+            return "OP_vkCmdSetDeviceMaskKHR";
+        }
+        case OP_vkCmdDispatchBaseKHR: {
+            return "OP_vkCmdDispatchBaseKHR";
+        }
+#endif
 #ifdef VK_KHR_maintenance1
         case OP_vkTrimCommandPoolKHR: {
             return "OP_vkTrimCommandPoolKHR";
+        }
+#endif
+#ifdef VK_KHR_device_group_creation
+        case OP_vkEnumeratePhysicalDeviceGroupsKHR: {
+            return "OP_vkEnumeratePhysicalDeviceGroupsKHR";
         }
 #endif
 #ifdef VK_KHR_external_memory_capabilities
@@ -25051,10 +25115,15 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkGetSemaphoreFdKHR";
         }
 #endif
-#ifdef VK_KHR_descriptor_update_template
+#ifdef VK_KHR_push_descriptor
+        case OP_vkCmdPushDescriptorSetKHR: {
+            return "OP_vkCmdPushDescriptorSetKHR";
+        }
         case OP_vkCmdPushDescriptorSetWithTemplateKHR: {
             return "OP_vkCmdPushDescriptorSetWithTemplateKHR";
         }
+#endif
+#ifdef VK_KHR_descriptor_update_template
         case OP_vkCreateDescriptorUpdateTemplateKHR: {
             return "OP_vkCreateDescriptorUpdateTemplateKHR";
         }
@@ -25122,6 +25191,14 @@ const char* api_opcode_to_string(const uint32_t opcode) {
 #ifdef VK_KHR_maintenance3
         case OP_vkGetDescriptorSetLayoutSupportKHR: {
             return "OP_vkGetDescriptorSetLayoutSupportKHR";
+        }
+#endif
+#ifdef VK_KHR_draw_indirect_count
+        case OP_vkCmdDrawIndirectCountKHR: {
+            return "OP_vkCmdDrawIndirectCountKHR";
+        }
+        case OP_vkCmdDrawIndexedIndirectCountKHR: {
+            return "OP_vkCmdDrawIndexedIndirectCountKHR";
         }
 #endif
 #ifdef VK_ANDROID_native_buffer
@@ -25282,11 +25359,6 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkCmdSetScissorWithCountEXT";
         }
 #endif
-#ifdef VK_EXT_host_image_copy
-        case OP_vkCopyImageToMemoryEXT: {
-            return "OP_vkCopyImageToMemoryEXT";
-        }
-#endif
 #ifdef VK_GRAPHICS_VERSION_1_4
         case OP_vkCmdSetRenderingAttachmentLocations: {
             return "OP_vkCmdSetRenderingAttachmentLocations";
@@ -25352,11 +25424,6 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkCmdSetDepthWriteEnableEXT";
         }
 #endif
-#ifdef VK_EXT_host_image_copy
-        case OP_vkCopyMemoryToImageEXT: {
-            return "OP_vkCopyMemoryToImageEXT";
-        }
-#endif
 #ifdef VK_KHR_buffer_device_address
         case OP_vkGetBufferDeviceAddressKHR: {
             return "OP_vkGetBufferDeviceAddressKHR";
@@ -25405,11 +25472,6 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkCopyImageToImage";
         }
 #endif
-#ifdef VK_EXT_host_image_copy
-        case OP_vkCopyImageToImageEXT: {
-            return "OP_vkCopyImageToImageEXT";
-        }
-#endif
 #ifdef VK_BASE_VERSION_1_3
         case OP_vkDestroyPrivateDataSlot: {
             return "OP_vkDestroyPrivateDataSlot";
@@ -25440,6 +25502,16 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkCmdCopyImage2KHR";
         }
 #endif
+#ifdef VK_KHR_timeline_semaphore
+        case OP_vkGetSemaphoreCounterValueKHR: {
+            return "OP_vkGetSemaphoreCounterValueKHR";
+        }
+#endif
+#ifdef VK_KHR_map_memory2
+        case OP_vkUnmapMemory2KHR: {
+            return "OP_vkUnmapMemory2KHR";
+        }
+#endif
 #ifdef VK_BASE_VERSION_1_4
         case OP_vkUnmapMemory2: {
             return "OP_vkUnmapMemory2";
@@ -25465,9 +25537,19 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkReleaseSwapchainImagesEXT";
         }
 #endif
+#ifdef VK_KHR_dynamic_rendering_local_read
+        case OP_vkCmdSetRenderingAttachmentLocationsKHR: {
+            return "OP_vkCmdSetRenderingAttachmentLocationsKHR";
+        }
+#endif
 #ifdef VK_COMPUTE_VERSION_1_3
         case OP_vkCmdSetEvent2: {
             return "OP_vkCmdSetEvent2";
+        }
+#endif
+#ifdef VK_KHR_map_memory2
+        case OP_vkMapMemory2KHR: {
+            return "OP_vkMapMemory2KHR";
         }
 #endif
 #ifdef VK_BASE_VERSION_1_3
@@ -25528,9 +25610,9 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkSetPrivateData";
         }
 #endif
-#ifdef VK_EXT_host_image_copy
-        case OP_vkTransitionImageLayoutEXT: {
-            return "OP_vkTransitionImageLayoutEXT";
+#ifdef VK_EXT_host_query_reset
+        case OP_vkResetQueryPoolEXT: {
+            return "OP_vkResetQueryPoolEXT";
         }
 #endif
 #ifdef VK_KHR_maintenance4
@@ -25619,6 +25701,11 @@ const char* api_opcode_to_string(const uint32_t opcode) {
 #ifdef VK_KHR_swapchain_maintenance1
         case OP_vkReleaseSwapchainImagesKHR: {
             return "OP_vkReleaseSwapchainImagesKHR";
+        }
+#endif
+#ifdef VK_KHR_dynamic_rendering_local_read
+        case OP_vkCmdSetRenderingInputAttachmentIndicesKHR: {
+            return "OP_vkCmdSetRenderingInputAttachmentIndicesKHR";
         }
 #endif
 #ifdef VK_EXT_image_drm_format_modifier
@@ -25711,6 +25798,11 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkCmdSetLineStippleEXT";
         }
 #endif
+#ifdef VK_KHR_timeline_semaphore
+        case OP_vkWaitSemaphoresKHR: {
+            return "OP_vkWaitSemaphoresKHR";
+        }
+#endif
 #ifdef VK_EXT_extended_dynamic_state
         case OP_vkCmdSetCullModeEXT: {
             return "OP_vkCmdSetCullModeEXT";
@@ -25767,6 +25859,11 @@ const char* api_opcode_to_string(const uint32_t opcode) {
 #ifdef VK_COMPUTE_VERSION_1_4
         case OP_vkCmdPushDescriptorSet2: {
             return "OP_vkCmdPushDescriptorSet2";
+        }
+#endif
+#ifdef VK_KHR_timeline_semaphore
+        case OP_vkSignalSemaphoreKHR: {
+            return "OP_vkSignalSemaphoreKHR";
         }
 #endif
 #ifdef VK_BASE_VERSION_1_4
@@ -25969,7 +26066,7 @@ const char* api_opcode_to_string(const uint32_t opcode) {
             return "OP_vkGetDeviceMemoryOpaqueCaptureAddressKHR";
         }
 #endif
-#ifdef VK_EXT_host_image_copy
+#ifdef VK_EXT_image_compression_control
         case OP_vkGetImageSubresourceLayout2EXT: {
             return "OP_vkGetImageSubresourceLayout2EXT";
         }

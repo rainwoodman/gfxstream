@@ -165,6 +165,41 @@ uint32_t getMissingFeatures(const VkPhysicalDeviceFeatures& supported,
     return numMissing;
 }
 
+void clearShaderFloatControls2Features(VkPhysicalDeviceFeatures2* pFeatures) {
+    if (!pFeatures) {
+        return;
+    }
+    if (auto* fc2Features =
+            vk_find_struct<VkPhysicalDeviceShaderFloatControls2Features>(pFeatures)) {
+        fc2Features->shaderFloatControls2 = VK_FALSE;
+    }
+    if (auto* vulkan14Features = vk_find_struct<VkPhysicalDeviceVulkan14Features>(pFeatures)) {
+        vulkan14Features->shaderFloatControls2 = VK_FALSE;
+    }
+}
+
+VkResult validateShaderFloatControls2CreateInfo(const VkDeviceCreateInfo* pCreateInfo) {
+    if (!pCreateInfo) {
+        return VK_SUCCESS;
+    }
+    for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; ++i) {
+        const char* extName =
+            pCreateInfo->ppEnabledExtensionNames ? pCreateInfo->ppEnabledExtensionNames[i] : nullptr;
+        if (extName && strcmp(extName, VK_KHR_SHADER_FLOAT_CONTROLS_2_EXTENSION_NAME) == 0) {
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+        }
+    }
+    const auto* fc2Features =
+        vk_find_struct<VkPhysicalDeviceShaderFloatControls2Features>(pCreateInfo);
+    const auto* vulkan14Features =
+        vk_find_struct<VkPhysicalDeviceVulkan14Features>(pCreateInfo);
+    if ((fc2Features != nullptr && fc2Features->shaderFloatControls2) ||
+        (vulkan14Features != nullptr && vulkan14Features->shaderFloatControls2)) {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    return VK_SUCCESS;
+}
+
 bool YcbcrSamplerPool::init(const VulkanDispatch* ivk, const VulkanDispatch* dvk,
                             VkPhysicalDevice physicalDevice, VkDevice device) {
     if (mDvk) {
@@ -501,6 +536,67 @@ void addNeededBarriersToUseImage(VkImage image, uint32_t preQueueFamilyIndex,
                 },
         };
         postUseQueueTransferBarriers->emplace_back(queueTransferBarrier);
+    }
+}
+
+uint32_t vkFormatToAhbFormat(VkFormat format) {
+    switch (format) {
+        case VK_FORMAT_R8G8B8A8_UNORM:
+        case VK_FORMAT_R8G8B8A8_SRGB:
+            return 1;  // AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM
+        case VK_FORMAT_R8G8B8_UNORM:
+            return 3;  // AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM
+        case VK_FORMAT_R5G6B5_UNORM_PACK16:
+            return 4;  // AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM
+        case VK_FORMAT_B8G8R8A8_UNORM:
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return 5;  // AHARDWAREBUFFER_FORMAT_B8G8R8A8_UNORM
+        case VK_FORMAT_R16G16B16A16_SFLOAT:
+            return 0x16;  // AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT
+        case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+            return 0x2b;  // AHARDWAREBUFFER_FORMAT_R10G10B10A2_UNORM
+        case VK_FORMAT_D16_UNORM:
+            return 0x30;  // AHARDWAREBUFFER_FORMAT_D16_UNORM
+        case VK_FORMAT_X8_D24_UNORM_PACK32:
+            return 0x31;  // AHARDWAREBUFFER_FORMAT_D24_UNORM
+        case VK_FORMAT_D24_UNORM_S8_UINT:
+            return 0x32;  // AHARDWAREBUFFER_FORMAT_D24_UNORM_S8_UINT
+        case VK_FORMAT_D32_SFLOAT:
+            return 0x33;  // AHARDWAREBUFFER_FORMAT_D32_FLOAT
+        case VK_FORMAT_D32_SFLOAT_S8_UINT:
+            return 0x34;  // AHARDWAREBUFFER_FORMAT_D32_FLOAT_S8_UINT
+        case VK_FORMAT_S8_UINT:
+            return 0x35;  // AHARDWAREBUFFER_FORMAT_S8_UINT
+        case VK_FORMAT_R8_UNORM:
+            return 0x38;  // AHARDWAREBUFFER_FORMAT_R8_UNORM
+        default:
+            return 0;
+    }
+}
+
+uint32_t ahbFormatBytesPerPixel(uint32_t ahbFormat) {
+    switch (ahbFormat) {
+        case 1:     // AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM
+        case 2:     // AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM
+        case 5:     // AHARDWAREBUFFER_FORMAT_B8G8R8A8_UNORM
+        case 0x2b:  // AHARDWAREBUFFER_FORMAT_R10G10B10A2_UNORM
+        case 0x31:  // AHARDWAREBUFFER_FORMAT_D24_UNORM
+        case 0x32:  // AHARDWAREBUFFER_FORMAT_D24_UNORM_S8_UINT
+        case 0x33:  // AHARDWAREBUFFER_FORMAT_D32_FLOAT
+            return 4;
+        case 3:  // AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM
+            return 3;
+        case 4:     // AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM
+        case 0x30:  // AHARDWAREBUFFER_FORMAT_D16_UNORM
+            return 2;
+        case 0x16:  // AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT
+        case 0x34:  // AHARDWAREBUFFER_FORMAT_D32_FLOAT_S8_UINT
+            return 8;
+        case 0x35:  // AHARDWAREBUFFER_FORMAT_S8_UINT
+        case 0x38:  // AHARDWAREBUFFER_FORMAT_R8_UNORM
+            return 1;
+        default:
+            return 0;
     }
 }
 

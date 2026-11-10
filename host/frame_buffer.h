@@ -193,9 +193,10 @@ class FrameBuffer : public gfxstream::base::EventNotificationSupport<FrameBuffer
     // host process pipe must be blocked until this function returns.
     void createGraphicsProcessResources(uint64_t puid);
     // The process resource is returned so that we can destroy it on a separate thread.
-    std::unique_ptr<ProcessResources> removeGraphicsProcessResources(uint64_t puid);
+    std::shared_ptr<ProcessResources> removeGraphicsProcessResources(uint64_t puid);
     void signalGuestProcessDead(uint64_t puid);
-    void waitForProcessCleanup();
+    void enqueueAsyncCleanup(std::function<void()> cleanup);
+    void waitForAllPendingCleanups();
 
     // Read the content of a given Buffer into client memory.
     // |p_buffer| is the Buffer's handle value.
@@ -375,11 +376,11 @@ class FrameBuffer : public gfxstream::base::EventNotificationSupport<FrameBuffer
     IColorBufferRef findColorBuffer(HandleType p_colorbuffer);
     BufferPtr findBuffer(HandleType p_buffer);
 
-    void registerProcessCleanupCallback(void* key, uint64_t contextId,
+    bool registerProcessCleanupCallback(void* key, uint64_t contextId,
                                         std::function<void()> callback);
-    void unregisterProcessCleanupCallback(void* key);
+    bool unregisterProcessCleanupCallback(void* key);
 
-    const ProcessResources* getProcessResources(uint64_t puid);
+    std::shared_ptr<const ProcessResources> getProcessResources(uint64_t puid);
 
     int createDisplay(uint32_t *displayId);
     int createDisplay(uint32_t displayId);

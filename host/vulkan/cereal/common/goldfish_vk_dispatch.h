@@ -371,8 +371,16 @@ struct VulkanDispatch {
     PFN_vkGetPhysicalDeviceSparseImageFormatProperties2KHR
         vkGetPhysicalDeviceSparseImageFormatProperties2KHR;
 #endif
+#ifdef VK_KHR_device_group
+    PFN_vkGetDeviceGroupPeerMemoryFeaturesKHR vkGetDeviceGroupPeerMemoryFeaturesKHR;
+    PFN_vkCmdSetDeviceMaskKHR vkCmdSetDeviceMaskKHR;
+    PFN_vkCmdDispatchBaseKHR vkCmdDispatchBaseKHR;
+#endif
 #ifdef VK_KHR_maintenance1
     PFN_vkTrimCommandPoolKHR vkTrimCommandPoolKHR;
+#endif
+#ifdef VK_KHR_device_group_creation
+    PFN_vkEnumeratePhysicalDeviceGroupsKHR vkEnumeratePhysicalDeviceGroupsKHR;
 #endif
 #ifdef VK_KHR_external_memory_capabilities
     PFN_vkGetPhysicalDeviceExternalBufferPropertiesKHR
@@ -398,11 +406,14 @@ struct VulkanDispatch {
     PFN_vkImportSemaphoreFdKHR vkImportSemaphoreFdKHR;
     PFN_vkGetSemaphoreFdKHR vkGetSemaphoreFdKHR;
 #endif
+#ifdef VK_KHR_push_descriptor
+    PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
+    PFN_vkCmdPushDescriptorSetWithTemplateKHR vkCmdPushDescriptorSetWithTemplateKHR;
+#endif
 #ifdef VK_KHR_descriptor_update_template
     PFN_vkCreateDescriptorUpdateTemplateKHR vkCreateDescriptorUpdateTemplateKHR;
     PFN_vkDestroyDescriptorUpdateTemplateKHR vkDestroyDescriptorUpdateTemplateKHR;
     PFN_vkUpdateDescriptorSetWithTemplateKHR vkUpdateDescriptorSetWithTemplateKHR;
-    PFN_vkCmdPushDescriptorSetWithTemplateKHR vkCmdPushDescriptorSetWithTemplateKHR;
 #endif
 #ifdef VK_KHR_create_renderpass2
     PFN_vkCreateRenderPass2KHR vkCreateRenderPass2KHR;
@@ -433,6 +444,19 @@ struct VulkanDispatch {
 #ifdef VK_KHR_maintenance3
     PFN_vkGetDescriptorSetLayoutSupportKHR vkGetDescriptorSetLayoutSupportKHR;
 #endif
+#ifdef VK_KHR_draw_indirect_count
+    PFN_vkCmdDrawIndirectCountKHR vkCmdDrawIndirectCountKHR;
+    PFN_vkCmdDrawIndexedIndirectCountKHR vkCmdDrawIndexedIndirectCountKHR;
+#endif
+#ifdef VK_KHR_timeline_semaphore
+    PFN_vkGetSemaphoreCounterValueKHR vkGetSemaphoreCounterValueKHR;
+    PFN_vkWaitSemaphoresKHR vkWaitSemaphoresKHR;
+    PFN_vkSignalSemaphoreKHR vkSignalSemaphoreKHR;
+#endif
+#ifdef VK_KHR_dynamic_rendering_local_read
+    PFN_vkCmdSetRenderingAttachmentLocationsKHR vkCmdSetRenderingAttachmentLocationsKHR;
+    PFN_vkCmdSetRenderingInputAttachmentIndicesKHR vkCmdSetRenderingInputAttachmentIndicesKHR;
+#endif
 #ifdef VK_KHR_buffer_device_address
     PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
     PFN_vkGetBufferOpaqueCaptureAddressKHR vkGetBufferOpaqueCaptureAddressKHR;
@@ -443,6 +467,10 @@ struct VulkanDispatch {
     PFN_vkGetPipelineExecutableStatisticsKHR vkGetPipelineExecutableStatisticsKHR;
     PFN_vkGetPipelineExecutableInternalRepresentationsKHR
         vkGetPipelineExecutableInternalRepresentationsKHR;
+#endif
+#ifdef VK_KHR_map_memory2
+    PFN_vkMapMemory2KHR vkMapMemory2KHR;
+    PFN_vkUnmapMemory2KHR vkUnmapMemory2KHR;
 #endif
 #ifdef VK_KHR_synchronization2
     PFN_vkCmdSetEvent2KHR vkCmdSetEvent2KHR;
@@ -544,6 +572,9 @@ struct VulkanDispatch {
 #ifdef VK_EXT_line_rasterization
     PFN_vkCmdSetLineStippleEXT vkCmdSetLineStippleEXT;
 #endif
+#ifdef VK_EXT_host_query_reset
+    PFN_vkResetQueryPoolEXT vkResetQueryPoolEXT;
+#endif
 #ifdef VK_EXT_extended_dynamic_state
     PFN_vkCmdSetCullModeEXT vkCmdSetCullModeEXT;
     PFN_vkCmdSetFrontFaceEXT vkCmdSetFrontFaceEXT;
@@ -558,13 +589,6 @@ struct VulkanDispatch {
     PFN_vkCmdSetStencilTestEnableEXT vkCmdSetStencilTestEnableEXT;
     PFN_vkCmdSetStencilOpEXT vkCmdSetStencilOpEXT;
 #endif
-#ifdef VK_EXT_host_image_copy
-    PFN_vkCopyMemoryToImageEXT vkCopyMemoryToImageEXT;
-    PFN_vkCopyImageToMemoryEXT vkCopyImageToMemoryEXT;
-    PFN_vkCopyImageToImageEXT vkCopyImageToImageEXT;
-    PFN_vkTransitionImageLayoutEXT vkTransitionImageLayoutEXT;
-    PFN_vkGetImageSubresourceLayout2EXT vkGetImageSubresourceLayout2EXT;
-#endif
 #ifdef VK_EXT_swapchain_maintenance1
     PFN_vkReleaseSwapchainImagesEXT vkReleaseSwapchainImagesEXT;
 #endif
@@ -576,6 +600,9 @@ struct VulkanDispatch {
 #endif
 #ifdef VK_EXT_metal_objects
     PFN_vkExportMetalObjectsEXT vkExportMetalObjectsEXT;
+#endif
+#ifdef VK_EXT_image_compression_control
+    PFN_vkGetImageSubresourceLayout2EXT vkGetImageSubresourceLayout2EXT;
 #endif
 #ifdef VK_EXT_extended_dynamic_state2
     PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT;

@@ -90,6 +90,7 @@ cc_library_static {
         "vk_emulated_physical_device_queue.cpp",
         "vk_format_support.cpp",
         "vk_format_utils.cpp",
+        "vk_memory_allocation_helper.cpp",
         "vk_reconstruction.cpp",
         "vk_utils.cpp",
         "vk_vvl_configuration.cpp",
@@ -108,6 +109,9 @@ cc_library_static {
     ],
     export_include_dirs: [
         ".",
+    ],
+    extra_include_dir_deps: [
+        "vk_sub_decoder.cpp",
     ],
 }
 
@@ -228,6 +232,38 @@ cc_test_host {
     ],
 }
 
+// Run with `atest --host gfxstream_vk_memory_allocation_helper_tests`
+cc_test_host {
+    name: "gfxstream_vk_memory_allocation_helper_tests",
+    defaults: ["gfxstream_host_cc_defaults"],
+    srcs: [
+        "vk_memory_allocation_helper_tests.cpp",
+    ],
+    shared_libs: [
+        "libbase",
+        "liblog",
+    ],
+    header_libs: [
+        "libgfxstream_host_vulkan_cereal_common",
+    ],
+    static_libs: [
+        "libgfxstream_common_base",
+        "libgfxstream_common_logging",
+        "libgfxstream_common_utils",
+        "libgfxstream_host_common",
+        "libgfxstream_host_features",
+        "libgfxstream_host_vulkan_server",
+        "libgmock",
+        "libgtest",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: [
+        "general-tests",
+    ],
+}
+
 // Run with `atest --host gfxstream_vkutil_tests`
 cc_test_host {
     name: "gfxstream_vkutil_tests",
@@ -244,6 +280,8 @@ cc_test_host {
     ],
     static_libs: [
         "libgfxstream_common_logging",
+        "libgfxstream_common_utils",
+        "libgfxstream_host_features",
         "libgfxstream_host_vulkan_server",
         "libgmock",
         "libgtest",

@@ -428,48 +428,29 @@ void VkEmulation::appendExternalMemoryModeDeviceExtensions(
     }
 }
 
-// Return true if format requires sampler YCBCR conversion for VK_IMAGE_ASPECT_COLOR_BIT image
-// views. Table found in spec
-static bool formatRequiresYcbcrConversion(VkFormat format) {
-    switch (format) {
-        case VK_FORMAT_G8B8G8R8_422_UNORM:
-        case VK_FORMAT_B8G8R8G8_422_UNORM:
-        case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
-        case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
-        case VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM:
-        case VK_FORMAT_G8_B8R8_2PLANE_422_UNORM:
-        case VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM:
-        case VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16:
-        case VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16:
-        case VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16:
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16:
-        case VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16:
-        case VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16:
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_G16B16G16R16_422_UNORM:
-        case VK_FORMAT_B16G16R16G16_422_UNORM:
-        case VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM:
-        case VK_FORMAT_G16_B16R16_2PLANE_420_UNORM:
-        case VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM:
-        case VK_FORMAT_G16_B16R16_2PLANE_422_UNORM:
-        case VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM:
-        case VK_FORMAT_G8_B8R8_2PLANE_444_UNORM:
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16:
-        case VK_FORMAT_G16_B16R16_2PLANE_444_UNORM:
-            return true;
-        default:
-            return false;
+static VkImageUsageFlags getSupportedImageUsageFlags(const VkFormatProperties& formatProperties,
+                                                     VkImageTiling tiling) {
+    constexpr std::pair<VkFormatFeatureFlags, VkImageUsageFlags> kFormatUsagePairs[] = {
+        {VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
+         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT},
+        {VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT},
+        {VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT, VK_IMAGE_USAGE_SAMPLED_BIT},
+        {VK_FORMAT_FEATURE_TRANSFER_SRC_BIT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT},
+        {VK_FORMAT_FEATURE_TRANSFER_DST_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT},
+        {VK_FORMAT_FEATURE_BLIT_SRC_BIT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT},
+    };
+    const VkFormatFeatureFlags tilingFeatures = (tiling == VK_IMAGE_TILING_OPTIMAL)
+                                                    ? formatProperties.optimalTilingFeatures
+                                                    : formatProperties.linearTilingFeatures;
+
+    VkImageUsageFlags usage = 0;
+    for (const auto& [featureFlags, usageFlags] : kFormatUsagePairs) {
+        if (tilingFeatures & featureFlags) {
+            usage |= usageFlags;
+        }
     }
+    return usage;
 }
 
 bool VkEmulation::populateImageFormatExternalMemorySupportInfo(VulkanDispatch* vk,
@@ -483,14 +464,17 @@ bool VkEmulation::populateImageFormatExternalMemorySupportInfo(VulkanDispatch* v
 
     info->formatProps2 = {
         VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
-        0,
+        nullptr,
         outFormatProps,
     };
 
-    if (!mInstanceSupportsExternalMemoryCapabilities) {
-        info->supportsExternalMemory = false;
-        info->requiresDedicatedAllocation = false;
+    info->usageFlags = getSupportedImageUsageFlags(outFormatProps, info->tiling);
+    if (info->usageFlags == 0) {
+        info->supported = false;
+        return true;
+    }
 
+    if (!mInstanceSupportsExternalMemoryCapabilities) {
         VkImageFormatProperties outImageFormatProps;
         VkResult res = vk->vkGetPhysicalDeviceImageFormatProperties(
             physdev, info->format, info->type, info->tiling, info->usageFlags, info->createFlags,
@@ -503,7 +487,7 @@ bool VkEmulation::populateImageFormatExternalMemorySupportInfo(VulkanDispatch* v
             } else {
                 GFXSTREAM_ERROR(
                     "vkGetPhysicalDeviceImageFormatProperties query "
-                    "failed with %s"
+                    "failed with %s "
                     "for format 0x%x type 0x%x usage 0x%x flags 0x%x",
                     string_VkResult(res), info->format, info->type, info->usageFlags,
                     info->createFlags);
@@ -513,19 +497,13 @@ bool VkEmulation::populateImageFormatExternalMemorySupportInfo(VulkanDispatch* v
 
         info->supported = true;
 
-        info->imageFormatProps2 = {
-            VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-            0,
-            outImageFormatProps,
-        };
-
-        GFXSTREAM_DEBUG("Supported (not externally): %s %s %s %s", string_VkFormat(info->format),
+        GFXSTREAM_DEBUG("Supported (not externally): %s %s %s %s %s", string_VkFormat(info->format),
                         string_VkImageType(info->type), string_VkImageTiling(info->tiling),
-                        string_VkImageUsageFlagBits((VkImageUsageFlagBits)info->usageFlags));
+                        string_VkImageUsageFlags(info->usageFlags).c_str(),
+                        string_VkImageCreateFlags(info->createFlags).c_str());
 
         return true;
     }
-
 
     VkPhysicalDeviceImageFormatInfo2 formatInfo2 = {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
@@ -537,44 +515,51 @@ bool VkEmulation::populateImageFormatExternalMemorySupportInfo(VulkanDispatch* v
         info->createFlags,
     };
 
-    VkImageFormatProperties2 outProps2 = {VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-                                          nullptr,
-                                          {
-                                              {0, 0, 0},
-                                              0,
-                                              0,
-                                              1,
-                                              0,
-                                          }};
+    VkImageFormatProperties2 outProps2 = {
+        VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+        nullptr,
+        {},
+    };
 
     VkPhysicalDeviceExternalImageFormatInfo extInfo = {
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+        nullptr,
+        static_cast<VkExternalMemoryHandleTypeFlagBits>(0),
     };
 
     VkExternalImageFormatProperties outExternalProps = {
         VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
-        0,
-        {
-            (VkExternalMemoryFeatureFlags)0,
-            (VkExternalMemoryHandleTypeFlags)0,
-            (VkExternalMemoryHandleTypeFlags)0,
-        },
+        nullptr,
+        {},
     };
 
+    const bool queryYcbcrConversionProps =
+        mDeviceInfo.supportsSamplerYcbcrConversion &&
+        formatRequiresSamplerYcbcrConversion(info->format);
+    VkSamplerYcbcrConversionImageFormatProperties outYcbcrProps = {
+        VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_IMAGE_FORMAT_PROPERTIES,
+        nullptr,
+        0,
+    };
+
+    if (queryYcbcrConversionProps) {
+        outProps2.pNext = &outYcbcrProps;
+    }
     if (supportsExternalMemory()) {
         extInfo.handleType = getDefaultExternalMemoryHandleType();
-
         formatInfo2.pNext = &extInfo;
-        outProps2.pNext= &outExternalProps;
+        outExternalProps.pNext = outProps2.pNext;
+        outProps2.pNext = &outExternalProps;
     }
 
     VkResult res = mGetImageFormatProperties2Func(physdev, &formatInfo2, &outProps2);
 
     if (res != VK_SUCCESS) {
         if (res == VK_ERROR_FORMAT_NOT_SUPPORTED) {
-            GFXSTREAM_DEBUG("Not Supported: %s %s %s %s", string_VkFormat(info->format),
+            GFXSTREAM_DEBUG("Not Supported: %s %s %s %s %s", string_VkFormat(info->format),
                             string_VkImageType(info->type), string_VkImageTiling(info->tiling),
-                            string_VkImageUsageFlagBits((VkImageUsageFlagBits)info->usageFlags));
+                            string_VkImageUsageFlags(info->usageFlags).c_str(),
+                            string_VkImageCreateFlags(info->createFlags).c_str());
 
             info->supported = false;
             return true;
@@ -590,36 +575,31 @@ bool VkEmulation::populateImageFormatExternalMemorySupportInfo(VulkanDispatch* v
     }
 
     info->supported = true;
+    if (queryYcbcrConversionProps) {
+        info->combinedImageSamplerDescriptorCount =
+            outYcbcrProps.combinedImageSamplerDescriptorCount;
+    }
 
     VkExternalMemoryFeatureFlags featureFlags =
         outExternalProps.externalMemoryProperties.externalMemoryFeatures;
 
-    VkExternalMemoryHandleTypeFlags exportImportedFlags =
-        outExternalProps.externalMemoryProperties.exportFromImportedHandleTypes;
-
-    // Don't really care about export form imported handle types yet
-    (void)exportImportedFlags;
-
     VkExternalMemoryHandleTypeFlags compatibleHandleTypes =
         outExternalProps.externalMemoryProperties.compatibleHandleTypes;
 
-    info->supportsExternalMemory = supportsExternalMemory() &&
-                                (getDefaultExternalMemoryHandleType() & compatibleHandleTypes) &&
-                                (VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT & featureFlags) &&
-                                (VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT & featureFlags);
+    bool externalMemorySupported = supportsExternalMemory() &&
+                                   (getDefaultExternalMemoryHandleType() & compatibleHandleTypes) &&
+                                   (VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT & featureFlags) &&
+                                   (VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT & featureFlags);
 
-    info->requiresDedicatedAllocation =
+    bool requiresDedicatedAllocation =
         (VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT & featureFlags);
 
-    info->imageFormatProps2 = outProps2;
-    info->extFormatProps = outExternalProps;
-    info->imageFormatProps2.pNext = &info->extFormatProps;
-
-    GFXSTREAM_DEBUG("Supported: %s %s %s %s, supportsExternalMemory? %d, requiresDedicated? %d",
+    GFXSTREAM_DEBUG("Supported: %s %s %s %s %s, supportsExternalMemory? %d, requiresDedicated? %d",
                     string_VkFormat(info->format), string_VkImageType(info->type),
                     string_VkImageTiling(info->tiling),
-                    string_VkImageUsageFlagBits((VkImageUsageFlagBits)info->usageFlags),
-                    info->supportsExternalMemory, info->requiresDedicatedAllocation);
+                    string_VkImageUsageFlags(info->usageFlags).c_str(),
+                    string_VkImageCreateFlags(info->createFlags).c_str(),
+                    externalMemorySupported, requiresDedicatedAllocation);
 
     return true;
 }
@@ -1685,6 +1665,18 @@ std::unique_ptr<VkEmulation> VkEmulation::create(VulkanDispatch* gvk,
 void VkEmulation::initFeatures(Features features) {
     std::lock_guard<std::mutex> lock(mMutex);
 
+    if (!mFeatures.VulkanDisableShaderFloatControls2.enabled() &&
+        mFeatures.VulkanDisableShaderFloatControls2.getReason() == "Default reason") {
+        // TODO(b/578322411): Remove (or gate on driverVersion) once affected host
+        // drivers fix SPIR-V compilation of OpExecutionModeId FPFastMathDefault.
+        GFXSTREAM_SET_BOOL_FEATURE_ON_CONDITION(
+            &mFeatures, VulkanDisableShaderFloatControls2,
+            (vk_util::extensionSupported(mDeviceInfo.extensions,
+                                         VK_KHR_SHADER_FLOAT_CONTROLS_2_EXTENSION_NAME) ||
+             mDeviceInfo.physdevProps.apiVersion >= VK_API_VERSION_1_4) &&
+                mDeviceInfo.physdevProps.vendorID == 0x1010);
+    }
+
     if (!mFeatures.MinimalLogging.enabled()) {
         GFXSTREAM_INFO("Initializing VkEmulation features:");
         GFXSTREAM_INFO("    glInteropSupported: %s",
@@ -1708,6 +1700,10 @@ void VkEmulation::initFeatures(Features features) {
                        VK_API_VERSION_PATCH(features.guestVulkanMaxApiVersion));
         GFXSTREAM_INFO("    enableProtectedMemoryEmulation: %s",
                        features.enableProtectedMemoryEmulation ? "true" : "false");
+        GFXSTREAM_INFO("    %s: %s (%s)",
+                       mFeatures.VulkanDisableShaderFloatControls2.getName().c_str(),
+                       mFeatures.VulkanDisableShaderFloatControls2.getValueReadable().c_str(),
+                       mFeatures.VulkanDisableShaderFloatControls2.getReason().c_str());
     }
 
     mDeviceInfo.glInteropSupported = features.glInteropSupported;
@@ -1718,6 +1714,14 @@ void VkEmulation::initFeatures(Features features) {
     mGuestVulkanOnly = features.guestVulkanOnly;
     mUseDedicatedAllocations = features.useDedicatedAllocations;
     mGuestVulkanMaxApiVersion = features.guestVulkanMaxApiVersion;
+    if (isShaderFloatControls2Disabled() && mGuestVulkanMaxApiVersion > VK_API_VERSION_1_3) {
+        // VK_KHR_shader_float_controls2 was promoted to core in Vulkan 1.4.
+        mGuestVulkanMaxApiVersion = VK_API_VERSION_1_3;
+        if (!mFeatures.MinimalLogging.enabled()) {
+            GFXSTREAM_INFO(
+                "    guestVulkanMaxApiVersion clamped to 1.3.0 (VulkanDisableShaderFloatControls2)");
+        }
+    }
     mEnableProtectedMemoryEmulation = features.enableProtectedMemoryEmulation;
 
     if (features.useVulkanComposition) {
@@ -1868,6 +1872,11 @@ bool VkEmulation::supportsExternalMemoryHostProperties() const {
 bool VkEmulation::isSwapchainEnabled() const { return mSwapchainEnabled; }
 
 bool VkEmulation::isLavapipe() const { return mDeviceInfo.isLavapipe; }
+
+bool VkEmulation::isShaderFloatControls2Disabled() const {
+    return mFeatures.VulkanDisableShaderFloatControls2.enabled() &&
+           !mFeatures.BypassVulkanDeviceFeatureOverrides.enabled();
+}
 
 std::optional<VkPhysicalDeviceRobustness2FeaturesEXT> VkEmulation::getRobustness2Features() const {
     return mDeviceInfo.robustness2Features;
@@ -2086,28 +2095,16 @@ MTLResource_id VkEmulation::getMtlResourceFromVkDeviceMemory(VulkanDispatch* vk,
 // and a ColorBuffer's own AHB request can be matched without ever calling allocAhb() twice.
 AhbShapeKey ComputeAhbShapeKey(const VkImageCreateInfo* imageCreateInfo) {
     // Map VkFormat to the corresponding AHB format — must match to avoid tiling mismatch.
-    uint32_t ahbFormat;
-    switch (imageCreateInfo->format) {
-        case VK_FORMAT_B8G8R8A8_UNORM:
-        case VK_FORMAT_B8G8R8A8_SRGB:
-            ahbFormat = 5;  // AHARDWAREBUFFER_FORMAT_B8G8R8A8_UNORM
-            break;
-        case VK_FORMAT_R8G8B8A8_UNORM:
-        case VK_FORMAT_R8G8B8A8_SRGB:
-        default:
-            ahbFormat = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
-            break;
-    }
+    const uint32_t ahbFormat = vk_util::vkFormatToAhbFormat(imageCreateInfo->format);
 
     // Translate the common VkImageUsageFlagBits into their corresponding AHB usage bits.
     uint64_t ahbUsage = 0;
     const VkImageUsageFlags vkUsage = imageCreateInfo->usage;
-    if (vkUsage & VK_IMAGE_USAGE_SAMPLED_BIT) {
+    if (vkUsage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) {
         ahbUsage |= AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
     }
     if (vkUsage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                   VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) {
+                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
         ahbUsage |= AHARDWAREBUFFER_USAGE_GPU_FRAMEBUFFER;
     }
     if (vkUsage & VK_IMAGE_USAGE_STORAGE_BIT) {
@@ -2122,6 +2119,7 @@ AhbShapeKey ComputeAhbShapeKey(const VkImageCreateInfo* imageCreateInfo) {
     return AhbShapeKey{
         .width = imageCreateInfo->extent.width,
         .height = imageCreateInfo->extent.height,
+        .layers = std::max(1u, imageCreateInfo->arrayLayers),
         .ahbFormat = ahbFormat,
         .ahbUsage = ahbUsage,
     };
@@ -2131,11 +2129,14 @@ AhbShapeKey ComputeAhbShapeKey(const VkImageCreateInfo* imageCreateInfo) {
 // Returns nullptr on failure (caller falls back to the non-AHB allocation path).
 AHardwareBuffer* allocAhb(const VkImageCreateInfo* imageCreateInfo) {
     const AhbShapeKey shape = ComputeAhbShapeKey(imageCreateInfo);
+    if (shape.ahbFormat == 0 || imageCreateInfo->mipLevels > 1) {
+        return nullptr;
+    }
 
     AHardwareBuffer_Desc desc = {
         .width = shape.width,
         .height = shape.height,
-        .layers = 1,
+        .layers = shape.layers,
         .format = shape.ahbFormat,
         .usage = shape.ahbUsage,
     };
@@ -2155,19 +2156,6 @@ void VkEmulation::stashPendingDeferredLayoutAhb(const VkImageCreateInfo* imageCr
     AHardwareBuffer_acquire(ahb);
     std::lock_guard<std::mutex> lock(mMutex);
     mPendingDeferredLayoutAhbs.emplace(ComputeAhbShapeKey(imageCreateInfo), ahb);
-}
-
-void VkEmulation::unstashPendingDeferredLayoutAhb(const VkImageCreateInfo* imageCreateInfo,
-                                                  AHardwareBuffer* ahb) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto range = mPendingDeferredLayoutAhbs.equal_range(ComputeAhbShapeKey(imageCreateInfo));
-    for (auto it = range.first; it != range.second; ++it) {
-        if (it->second == ahb) {
-            mPendingDeferredLayoutAhbs.erase(it);
-            AHardwareBuffer_release(ahb);
-            return;
-        }
-    }
 }
 
 AHardwareBuffer* VkEmulation::takePendingDeferredLayoutAhbLocked(
@@ -2231,21 +2219,6 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
 
     auto allocInfoChain = vk_make_chain_iterator(&allocInfo);
 
-    // HostAllocation mode uses host side allocation and should not add VkExportMemoryAllocateInfo.
-    // AndroidAHB mode uses AHardwareBuffer_allocate + import instead of export (see switch below).
-    if (mDeviceInfo.supportsExternalMemoryExport &&
-        getExternalMemoryMode() != ExternalMemory::Mode::HostAllocation &&
-        getExternalMemoryMode() != ExternalMemory::Mode::AndroidAHB) {
-        exportAi.handleTypes =
-            static_cast<VkExternalMemoryHandleTypeFlags>(getDefaultExternalMemoryHandleType());
-
-        if (mDeviceInfo.supportsDmaBuf) {
-            exportAi.handleTypes |= VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-        }
-
-        vk_append_struct(&allocInfoChain, &exportAi);
-    }
-
     if (bufferForDedicatedAllocation.hasValue() || imageForDedicatedAllocation.hasValue()) {
         info->dedicatedAllocation = true;
         if (bufferForDedicatedAllocation.hasValue()) {
@@ -2260,7 +2233,7 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
     switch (getExternalMemoryMode()) {
         // For host-allocation external memory mode, allocate host side memory first, then import
         case ExternalMemory::Mode::HostAllocation: {
-            // TODO(b/409769371): use PrivateMemory?
+            // TODO(b/409769371): use HeapMemory?
             VkDeviceSize alignment = externalMemoryHostProperties().minImportedHostPointerAlignment;
             VkDeviceSize alignedSize = ALIGN(allocInfo.allocationSize, alignment);
 #ifdef _WIN32
@@ -2442,9 +2415,13 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
                     break;
                 }
 
-                // Find a memory type that satisfies both the image and AHB requirements
-                uint32_t combinedBits = ahbProps.memoryTypeBits &
-                                        cbInfoPtr->imageMemReqs.memoryTypeBits;
+                // Find a memory type that satisfies both the image and AHB requirements.
+                // When the host driver defers image memory requirements until bind,
+                // imageMemReqs.memoryTypeBits is 0; fall back to ahbProps.memoryTypeBits.
+                const uint32_t imageTypeBits = cbInfoPtr->imageMemReqs.memoryTypeBits
+                                                   ? cbInfoPtr->imageMemReqs.memoryTypeBits
+                                                   : ahbProps.memoryTypeBits;
+                uint32_t combinedBits = ahbProps.memoryTypeBits & imageTypeBits;
                 if (!combinedBits) {
                     GFXSTREAM_WARNING(
                         "No common memory type for AHB (0x%x) and image (0x%x). "
@@ -2459,6 +2436,17 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
                 allocInfo.memoryTypeIndex = info->typeIndex;
                 info->size = ahbProps.allocationSize;
                 allocInfo.allocationSize = ahbProps.allocationSize;
+                if (cbInfoPtr->imageMemReqs.size == 0) {
+                    cbInfoPtr->imageMemReqs.size = ahbProps.allocationSize;
+                }
+
+                // Importing an AHardwareBuffer for an image requires a dedicated allocation on
+                // drivers that enforce dedicated image AHB imports.
+                if (!info->dedicatedAllocation && cbInfoPtr->image != VK_NULL_HANDLE) {
+                    info->dedicatedAllocation = true;
+                    dedicatedAllocInfo.image = cbInfoPtr->image;
+                    vk_append_struct(&allocInfoChain, &dedicatedAllocInfo);
+                }
 
                 // Chain the import info (declared at function scope above so it outlives
                 // the vkAllocateMemory call that consumes allocInfoChain).
@@ -2489,6 +2477,32 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
             break;
     }
 
+    // HostAllocation mode uses host side allocation and should not add VkExportMemoryAllocateInfo.
+    // AndroidAHB mode uses AHardwareBuffer_allocate + import for ColorBuffers instead of export.
+    // Non-ColorBuffer allocations (e.g. VkBuffer in setupVkBuffer) or when AHB import was not used
+    // (e.g. allocAhb failure) still rely on export, so they must add VkExportMemoryAllocateInfo.
+    bool isAndroidAhbImport = false;
+#ifdef __ANDROID__
+    isAndroidAhbImport = (getExternalMemoryMode() == ExternalMemory::Mode::AndroidAHB &&
+                          importAhbInfo.buffer != nullptr);
+#endif
+
+    if (mDeviceInfo.supportsExternalMemoryExport &&
+        getExternalMemoryMode() != ExternalMemory::Mode::HostAllocation &&
+        !isAndroidAhbImport) {
+        exportAi.handleTypes =
+            static_cast<VkExternalMemoryHandleTypeFlags>(getDefaultExternalMemoryHandleType());
+
+        // In AndroidAHB mode, the memory is exported as an AHardwareBuffer. Also requesting the
+        // dma-buf handle type makes some drivers (e.g. Adreno) crash in vkAllocateMemory.
+        if (mDeviceInfo.supportsDmaBuf &&
+            getExternalMemoryMode() != ExternalMemory::Mode::AndroidAHB) {
+            exportAi.handleTypes |= VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+        }
+
+        vk_append_struct(&allocInfoChain, &exportAi);
+    }
+
     bool memoryAllocated = false;
     std::vector<VkDeviceMemory> allocationAttempts;
     constexpr size_t kMaxAllocationAttempts = 20u;
@@ -2501,8 +2515,9 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
             break;
         }
 
-        if (mDeviceInfo.memProps.memoryTypes[info->typeIndex].propertyFlags &
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+        if (!isAndroidAhbImport &&
+            (mDeviceInfo.memProps.memoryTypes[info->typeIndex].propertyFlags &
+             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
             VkResult mapRes =
                 vk->vkMapMemory(mDevice, info->memory, 0, info->size, 0, &info->mappedPtr);
             if (mapRes != VK_SUCCESS) {
@@ -2551,6 +2566,13 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
         vk->vkFreeMemory(mDevice, mem, nullptr /* allocator */);
     }
     if (!memoryAllocated) {
+#ifdef __ANDROID__
+        if (importAhbInfo.buffer != nullptr) {
+            AHardwareBuffer_release(importAhbInfo.buffer);
+            importAhbInfo.buffer = nullptr;
+            info->handleInfo = std::nullopt;
+        }
+#endif
         return false;
     }
 
@@ -2626,10 +2648,12 @@ bool VkEmulation::allocExternalMemory(VulkanDispatch* vk, VkEmulation::ExternalM
                 exportRes =
                     vk->vkGetMemoryAndroidHardwareBufferANDROID(mDevice, &getAhbInfo, &exportHandle);
                 validHandle = (VK_SUCCESS == exportRes) && (NULL != exportHandle);
-                info->handleInfo = ExternalHandleInfo{
-                    .handle = reinterpret_cast<ExternalHandleType>(exportHandle),
-                    .streamHandleType = STREAM_HANDLE_TYPE_PLATFORM_AHB,
-                };
+                if (validHandle) {
+                    info->handleInfo = ExternalHandleInfo{
+                        .handle = reinterpret_cast<ExternalHandleType>(exportHandle),
+                        .streamHandleType = STREAM_HANDLE_TYPE_PLATFORM_AHB,
+                    };
+                }
             }
 #endif
             break;
@@ -2985,33 +3009,25 @@ uint32_t VkEmulation::getValidMemoryTypeIndex(uint32_t requiredMemoryTypeBits,
 std::unique_ptr<VkImageCreateInfo> VkEmulation::generateColorBufferVkImageCreateInfoLocked(
         VkFormat format, uint32_t width, uint32_t height, VkImageTiling tiling,
         uint32_t mipLevels) {
-    const ImageSupportInfo* maybeImageSupportInfo = mImageSupportInfo.GetSupportedInfo(format);
+    const VkFormat resolvedFormat = resolveAhbFormat(format);
+    const ImageSupportInfo* maybeImageSupportInfo =
+        mImageSupportInfo.GetSupportedInfo(resolvedFormat, tiling);
     if (!maybeImageSupportInfo) {
         GFXSTREAM_ERROR("Format %s [%d] is not supported.", string_VkFormat(format), format);
         return nullptr;
     }
     const ImageSupportInfo& imageSupportInfo = *maybeImageSupportInfo;
-
-    const VkFormatProperties& formatProperties = imageSupportInfo.formatProps2.formatProperties;
-
-    constexpr std::pair<VkFormatFeatureFlags, VkImageUsageFlags> formatUsagePairs[] = {
-        {VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
-         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT},
-        {VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
-         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT},
-        {VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT, VK_IMAGE_USAGE_SAMPLED_BIT},
-        {VK_FORMAT_FEATURE_TRANSFER_SRC_BIT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT},
-        {VK_FORMAT_FEATURE_TRANSFER_DST_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT},
-        {VK_FORMAT_FEATURE_BLIT_SRC_BIT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT},
-    };
-    VkFormatFeatureFlags tilingFeatures = (tiling == VK_IMAGE_TILING_OPTIMAL)
-                                              ? formatProperties.optimalTilingFeatures
-                                              : formatProperties.linearTilingFeatures;
-
-    VkImageUsageFlags usage = 0;
-    for (const auto& formatUsage : formatUsagePairs) {
-        usage |= (tilingFeatures & formatUsage.first) ? formatUsage.second : 0u;
+    if (resolvedFormat != format &&
+        !(imageSupportInfo.createFlags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)) {
+        GFXSTREAM_ERROR(
+            "Format %s [%d] is not supported because %s [%d] does not support "
+            "VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT.",
+            string_VkFormat(format), format, string_VkFormat(resolvedFormat), resolvedFormat);
+        return nullptr;
     }
+
+    const VkImageUsageFlags usage =
+        getSupportedImageUsageFlags(imageSupportInfo.formatProps2.formatProperties, tiling);
 
     return std::make_unique<VkImageCreateInfo>(VkImageCreateInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -3019,7 +3035,7 @@ std::unique_ptr<VkImageCreateInfo> VkEmulation::generateColorBufferVkImageCreate
         .pNext = nullptr,
         .flags = imageSupportInfo.createFlags,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = format,
+        .format = resolvedFormat,
         .extent =
             {
                 .width = width,
@@ -3214,9 +3230,13 @@ bool VkEmulation::createVkColorBufferLocked(uint32_t width, uint32_t height,
 
     infoPtr->memory.size = infoPtr->imageMemReqs.size;
 
-    // Determine memory type.
+    // Determine memory type. When the driver defers AHB image memory requirements until bind,
+    // imageMemReqs.memoryTypeBits is 0 here and will be resolved from ahbProps in
+    // allocExternalMemory().
     infoPtr->memory.typeIndex =
-        getValidMemoryTypeIndex(infoPtr->imageMemReqs.memoryTypeBits, infoPtr->memoryProperty);
+        infoPtr->imageMemReqs.memoryTypeBits != 0
+            ? getValidMemoryTypeIndex(infoPtr->imageMemReqs.memoryTypeBits, infoPtr->memoryProperty)
+            : 0;
 
     const VkFormat imageVkFormat = infoPtr->imageCreateInfoShallow.format;
     GFXSTREAM_DEBUG(
@@ -3263,7 +3283,7 @@ bool VkEmulation::createVkColorBufferLocked(uint32_t width, uint32_t height,
         .pNext = nullptr,
         .conversion = VK_NULL_HANDLE,
     };
-    bool addConversion = formatRequiresYcbcrConversion(imageVkFormat);
+    bool addConversion = formatRequiresSamplerYcbcrConversion(imageVkFormat);
     if (addConversion) {
         ycbcrInfo.conversion = mYcbcrSamplerPool.getConversion(format);
         if (ycbcrInfo.conversion == VK_NULL_HANDLE) {

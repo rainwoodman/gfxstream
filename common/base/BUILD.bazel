@@ -64,7 +64,12 @@ cc_library(
         "System.cpp",
         "Tracing.cpp",
         "UdmabufCreator_stub.cpp",
+        "heap_memory.cpp",
     ] + select({
+        "@platforms//os:android": [
+            "SharedMemory_posix.cpp",
+            "Thread_pthread.cpp",
+        ],
         "@platforms//os:windows": [
             "SharedMemory_win32.cpp",
             "Thread_win32.cpp",
@@ -94,6 +99,9 @@ cc_library(
     }),
     includes = ["include"],
     linkopts = select({
+        "@platforms//os:android": [
+            "-ldl",
+        ],
         "@platforms//os:linux": [
             "-ldl",
             "-lrt",

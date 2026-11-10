@@ -22,6 +22,7 @@
 
 #include "gfxstream/common/testing/graphics_test_environment.h"
 #include "gfxstream/files/PathUtils.h"
+#include "gfxstream/host/address_space_graphics.h"
 #include "gfxstream/host/color_buffer_interface.h"
 #include "gfxstream/host/display_operations.h"
 #include "gfxstream/host/features.h"
@@ -35,6 +36,8 @@
 #include "gfxstream/host/testing/ShaderUtils.h"
 #include "gfxstream/host/window_operations.h"
 #include "gfxstream/system/System.h"
+#include "gfxstream/host/address_space_graphics.h"
+#include "gfxstream/host/graphics_driver_lock.h"
 #include "host/gl/emulation_gl.h"
 #include "render_channel_impl.h"
 #include "render_thread_info.h"
@@ -189,6 +192,26 @@ TEST_F(FrameBufferTest, CreateOpenUpdateCloseColorBuffer) {
         createTestTextureRGBA8888SingleColor(mWidth, mHeight, 0.0f, 0.0f, 0.0f, 0.0f);
     mFb->readColorBuffer(handle, 0, 0, mWidth, mHeight, GfxstreamFormat::R8G8B8A8_UNORM, forRead.data(),
                          forRead.size());
+
+    EXPECT_TRUE(ImageMatches(mWidth, mHeight, 4, mWidth, forUpdate.data(), forRead.data()));
+
+    mFb->closeColorBuffer(handle);
+}
+
+TEST_F(FrameBufferTest, CreateOpenUpdateCloseColorBuffer_BGRA8888) {
+    HandleType handle =
+        mFb->createColorBuffer(mWidth, mHeight, GfxstreamFormat::B8G8R8A8_UNORM);
+    EXPECT_NE((HandleType)0, handle);
+    EXPECT_EQ(0, mFb->openColorBuffer(handle));
+
+    TestTexture forUpdate = createTestPatternRGBA8888(mWidth, mHeight);
+    mFb->updateColorBuffer(handle, 0, 0, mWidth, mHeight, GfxstreamFormat::B8G8R8A8_UNORM,
+                           forUpdate.data());
+
+    TestTexture forRead =
+        createTestTextureRGBA8888SingleColor(mWidth, mHeight, 0.0f, 0.0f, 0.0f, 0.0f);
+    mFb->readColorBuffer(handle, 0, 0, mWidth, mHeight, GfxstreamFormat::B8G8R8A8_UNORM,
+                         forRead.data(), forRead.size());
 
     EXPECT_TRUE(ImageMatches(mWidth, mHeight, 4, mWidth, forUpdate.data(), forRead.data()));
 
@@ -900,6 +923,8 @@ class RenderThreadDeadlockTest : public ::testing::Test {
     }
 
     void TearDown() override {
+        AddressSpaceGraphicsContext::clear();
+        AddressSpaceGraphicsContext::setConsumer({});
         FrameBuffer::finalize();
     }
 };
@@ -933,14 +958,17 @@ TEST_F(RenderThreadDeadlockTest, ReproDeadlockOnTeardown) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    std::promise<void> teardownPromise;
-    std::future<void> teardownFuture = teardownPromise.get_future();
+    auto teardownPromise = std::make_shared<std::promise<void>>();
+    std::future<void> teardownFuture = teardownPromise->get_future();
 
-    std::thread teardownThread([&]() {
-        channel->stop();
-        channel.reset();
-        teardownPromise.set_value();
-    });
+    std::thread teardownThread(
+        [fb, channel = std::move(channel), teardownPromise]() mutable {
+            fb->signalGuestProcessDead(contextId);
+            fb->waitForAllPendingCleanups();
+            channel->stop();
+            channel.reset();
+            teardownPromise->set_value();
+        });
 
     std::future_status status = teardownFuture.wait_for(std::chrono::seconds(3));
     if (status == std::future_status::timeout) {
@@ -949,8 +977,189 @@ TEST_F(RenderThreadDeadlockTest, ReproDeadlockOnTeardown) {
     } else {
         teardownThread.join();
     }
+}
 
-    fb->removeGraphicsProcessResources(contextId);
+TEST_F(RenderThreadDeadlockTest, ReproAsgFullMessageChannelDeadlockOnTeardown) {
+    auto fb = FrameBuffer::getFB();
+    ASSERT_NE(nullptr, fb);
+    if (!fb->hasEmulationVk()) {
+        GTEST_SKIP() << "Vulkan emulation not supported on this host.";
+    }
+
+    AddressSpaceGraphicsContext::setConsumer(ConsumerInterface{
+        .create = [](const AsgConsumerCreateInfo& info, Stream* loadStream) -> ConsumerHandle {
+            auto* thread = new RenderThread(info, loadStream);
+            thread->start();
+            return static_cast<void*>(thread);
+        },
+        .destroy = [](void* consumer) {
+            auto* thread = static_cast<RenderThread*>(consumer);
+            thread->waitForFinished();
+            {
+                gfxstream::base::AutoLock driverLock(*graphicsDriverLock());
+                thread->sendExitSignal();
+                thread->wait();
+            }
+            delete thread;
+        },
+        .preSave = [](void*) {},
+        .globalPreSave = []() {},
+        .save = [](void*, Stream*) {},
+        .globalPostSave = []() {},
+        .postSave = [](void*) {},
+        .postLoad = [](void*) {},
+        .globalPreLoad = []() {},
+        .reloadRingConfig = [](void*) {},
+    });
+
+    const uint32_t contextId = 12346;
+    fb->createGraphicsProcessResources(contextId);
+
+    auto asgMemory =
+        std::make_shared<std::vector<uint8_t>>(kAsgConsumerRingStorageSize + kAsgWriteBufferSize, 0);
+    AddressSpaceCreateInfo createInfo = {
+        .handle = 1,
+        .type = ADDRESS_SPACE_CONTEXT_TYPE_VIRTIO_GPU_GRAPHICS,
+        .createRenderThread = true,
+        .externalAddr = asgMemory->data(),
+        .externalAddrSize = static_cast<uint64_t>(asgMemory->size()),
+        .virtioGpuContextId = contextId,
+        .virtioGpuCapsetId = 0,
+        .contextName = "test-asg",
+        .contextNameSize = 8,
+    };
+    auto asg = std::make_unique<AddressSpaceGraphicsContext>(createInfo);
+
+    char* ringStorage = reinterpret_cast<char*>(asgMemory->data());
+    char* writeBuffer = ringStorage + kAsgConsumerRingStorageSize;
+    auto* toHostRing = reinterpret_cast<struct ring_buffer*>(
+        ringStorage + offsetof(struct asg_ring_storage, to_host));
+
+    uint32_t flags = 0;
+    uint32_t opcode = 200000000;  // OP_vkCreateInstance
+    uint32_t packetLen = 12;
+    uint32_t seqno = 2;
+    std::memcpy(writeBuffer, &flags, sizeof(flags));
+    std::memcpy(writeBuffer + 4, &opcode, sizeof(opcode));
+    std::memcpy(writeBuffer + 8, &packetLen, sizeof(packetLen));
+    std::memcpy(writeBuffer + 12, &seqno, sizeof(seqno));
+
+    asg_type1_xfer xfer = {
+        .offset = 0,
+        .size = 16,
+    };
+    ASSERT_EQ(1, ring_buffer_write(toHostRing, &xfer, sizeof(xfer), 1));
+
+    // Wake up RenderThread so it enters VkDecoder::Impl::decode and spins on seqno = 2,
+    // then send additional ASG_NOTIFY_AVAILABLE pings to fill mConsumerMessages (capacity 4).
+    AddressSpaceDevicePingInfo pingInfo = {
+        .metadata = ASG_NOTIFY_AVAILABLE,
+    };
+    asg->perform(&pingInfo);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    for (int i = 0; i < 6; ++i) {
+        asg->perform(&pingInfo);
+    }
+
+    auto teardownPromise = std::make_shared<std::promise<void>>();
+    std::future<void> teardownFuture = teardownPromise->get_future();
+
+    std::thread teardownThread(
+        [fb, asg = std::move(asg), asgMemory, teardownPromise]() mutable {
+            fb->signalGuestProcessDead(contextId);
+            asg.reset();
+            fb->waitForAllPendingCleanups();
+            AddressSpaceGraphicsContext::clear();
+            teardownPromise->set_value();
+        });
+
+    std::future_status status = teardownFuture.wait_for(std::chrono::seconds(3));
+    if (status == std::future_status::timeout) {
+        teardownThread.detach();
+        ADD_FAILURE() << "Deadlock detected! ASG teardown timed out after 3 seconds.";
+    } else {
+        teardownThread.join();
+    }
+}
+
+// ASGs historically used a fixed capacity message queue which would lead to deadlocks
+// if the queue became full but the consumer could not be awoken until the queue was
+// drained (e.g. b/329287602).
+TEST_F(RenderThreadDeadlockTest, CoalescedAsgConsumerStateFlags) {
+    ConsumerCallbacks capturedCallbacks = {};
+    bool destroyObservedExitStatus = false;
+
+    ConsumerInterface iface = {
+        .create = [&](const AsgConsumerCreateInfo& info, Stream*) -> ConsumerHandle {
+            capturedCallbacks = info.callbacks;
+            return reinterpret_cast<ConsumerHandle>(0x1);
+        },
+        .destroy = [&](ConsumerHandle) {
+            if (capturedCallbacks.onUnavailableRead) {
+                destroyObservedExitStatus =
+                    (capturedCallbacks.onUnavailableRead() == AsgOnUnavailableReadStatus::kExit);
+            }
+        },
+        .preSave = [](ConsumerHandle) {},
+        .globalPreSave = []() {},
+        .save = [](ConsumerHandle, Stream*) {},
+        .globalPostSave = []() {},
+        .postSave = [](ConsumerHandle) {},
+        .postLoad = [](ConsumerHandle) {},
+        .globalPreLoad = []() {},
+        .reloadRingConfig = [](ConsumerHandle) {},
+    };
+    AddressSpaceGraphicsContext::setConsumer(iface);
+
+    std::vector<char> externalStorage(kAsgConsumerRingStorageSize + kAsgWriteBufferSize, 0);
+    AddressSpaceCreateInfo createInfo = {};
+    createInfo.handle = 1;
+    createInfo.type = static_cast<uint32_t>(AddressSpaceDeviceType::VirtioGpuGraphics);
+    createInfo.createRenderThread = true;
+    createInfo.externalAddr = externalStorage.data();
+    createInfo.externalAddrSize = externalStorage.size();
+    createInfo.virtioGpuContextId = 1;
+
+    auto context = std::make_unique<AddressSpaceGraphicsContext>(createInfo);
+    ASSERT_TRUE(static_cast<bool>(capturedCallbacks.onUnavailableRead));
+
+    // Sending more than 4 ASG_NOTIFY_AVAILABLE pings without the consumer draining
+    // onUnavailableRead() must not block and should coalesce into a single wakeup.
+    for (int i = 0; i < 16; ++i) {
+        AddressSpaceDevicePingInfo pingInfo = {};
+        pingInfo.metadata = ASG_NOTIFY_AVAILABLE;
+        context->perform(&pingInfo);
+    }
+    EXPECT_EQ(AsgOnUnavailableReadStatus::kContinue, capturedCallbacks.onUnavailableRead());
+
+    // Subsequent notifications + snapshot transitions must not block and must preserve
+    // priority ordering (PreSave -> PostSave -> Wakeup).
+    for (int i = 0; i < 16; ++i) {
+        AddressSpaceDevicePingInfo pingInfo = {};
+        pingInfo.metadata = ASG_NOTIFY_AVAILABLE;
+        context->perform(&pingInfo);
+    }
+    context->preSave();
+    EXPECT_EQ(AsgOnUnavailableReadStatus::kPauseForSnapshot,
+              capturedCallbacks.onUnavailableRead());
+
+    context->postSave();
+    EXPECT_EQ(AsgOnUnavailableReadStatus::kResumeAfterSnapshot,
+              capturedCallbacks.onUnavailableRead());
+    EXPECT_EQ(AsgOnUnavailableReadStatus::kContinue, capturedCallbacks.onUnavailableRead());
+
+    // Flood notifications again and destroy context without draining wakeup; exit must take
+    // precedence and never block.
+    for (int i = 0; i < 16; ++i) {
+        AddressSpaceDevicePingInfo pingInfo = {};
+        pingInfo.metadata = ASG_NOTIFY_AVAILABLE;
+        context->perform(&pingInfo);
+    }
+    context.reset();
+    EXPECT_TRUE(destroyObservedExitStatus);
+
+    AddressSpaceGraphicsContext::clear();
+    AddressSpaceGraphicsContext::setConsumer({});
 }
 
 TEST_F(FrameBufferTest, CleanupProcGLObjects) {
@@ -972,7 +1181,7 @@ TEST_F(FrameBufferTest, CleanupProcGLObjects) {
     // Simulate render thread exit for this process before cleanupProcGLObjects
     mRenderThreadInfo->setPuid(0);
     mFb->signalGuestProcessDead(testPuid);
-    mFb->waitForProcessCleanup();
+    mFb->waitForAllPendingCleanups();
 
     EXPECT_FALSE(mFb->getEmulationGl()->hasProcOwnedResources());
     EXPECT_FALSE(mFb->getEmulationGl()->hasContextsOrWindowSurfaces());
@@ -983,6 +1192,56 @@ TEST_F(FrameBufferTest, CleanupProcGLObjects) {
     EXPECT_TRUE(mFb->getEmulationGl()->hasContextsOrWindowSurfaces());
     mFb->getEmulationGl()->drainRenderThreadContexts();
     EXPECT_FALSE(mFb->getEmulationGl()->hasContextsOrWindowSurfaces());
+}
+
+TEST_F(FrameBufferTest, ReusePuidBeforeAsyncCleanupCompletes) {
+    const uint64_t testPuid = 99;
+    mFb->createGraphicsProcessResources(testPuid);
+    std::shared_ptr<const ProcessResources> firstProcResources = mFb->getProcessResources(testPuid);
+    ASSERT_NE(nullptr, firstProcResources);
+    EXPECT_FALSE(firstProcResources->isGuestProcessDead());
+
+    mRenderThreadInfo->setPuid(testPuid);
+    mRenderThreadInfo->setProcessResources(firstProcResources);
+
+    bool firstCleanupRan = false;
+    int firstKey = 1;
+    mFb->registerProcessCleanupCallback(&firstKey, testPuid, [&]() {
+        firstCleanupRan = true;
+    });
+
+    // Signal first process dead while its RenderThreadInfo is still active.
+    mFb->signalGuestProcessDead(testPuid);
+    EXPECT_TRUE(firstProcResources->isGuestProcessDead());
+
+    // Immediately reuse the same puid for a new guest process before the first cleanup finishes.
+    mFb->createGraphicsProcessResources(testPuid);
+    std::shared_ptr<const ProcessResources> secondProcResources =
+        mFb->getProcessResources(testPuid);
+    ASSERT_NE(nullptr, secondProcResources);
+    EXPECT_NE(firstProcResources, secondProcResources);
+    EXPECT_FALSE(secondProcResources->isGuestProcessDead());
+
+    bool secondCleanupRan = false;
+    int secondKey = 2;
+    mRenderThreadInfo->setProcessResources(secondProcResources);
+    mFb->registerProcessCleanupCallback(&secondKey, testPuid, [&]() {
+        secondCleanupRan = true;
+    });
+
+    // Having switched mRenderThreadInfo to secondProcResources, the first process has no active
+    // RenderThreadInfo anymore, so its async cleanup can complete without touching secondProcResources.
+    mFb->waitForAllPendingCleanups();
+    EXPECT_TRUE(firstCleanupRan);
+    EXPECT_FALSE(secondCleanupRan);
+    EXPECT_EQ(secondProcResources, mFb->getProcessResources(testPuid));
+
+    // Now clean up the second process.
+    mRenderThreadInfo->setProcessResources(nullptr);
+    mRenderThreadInfo->setPuid(0);
+    mFb->signalGuestProcessDead(testPuid);
+    mFb->waitForAllPendingCleanups();
+    EXPECT_TRUE(secondCleanupRan);
 }
 
 }  // namespace

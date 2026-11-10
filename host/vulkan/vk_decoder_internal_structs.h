@@ -20,10 +20,6 @@
 #include <android/hardware_buffer.h>
 #endif
 
-#ifdef _WIN32
-#include <malloc.h>
-#endif
-
 #include <stdlib.h>
 
 #include <condition_variable>
@@ -43,6 +39,7 @@
 #include "gfxstream/common/logging.h"
 #include "gfxstream/host/handle.h"
 #include "gfxstream/memory/SharedMemory.h"
+#include "gfxstream/memory/heap_memory.h"
 #include "gfxstream/synchronization/ConditionVariable.h"
 #include "gfxstream/synchronization/Lock.h"
 #include "render-utils/stream.h"
@@ -125,32 +122,6 @@ class ExternalFencePool {
     size_t mMaxSize;
 };
 
-class PrivateMemory {
-public:
-    PrivateMemory(size_t alignment, size_t size) {
-#ifdef _WIN32
-        mAddr = _aligned_malloc(size, alignment);
-#else
-        mAddr = aligned_alloc(alignment, size);
-#endif
-    }
-    ~PrivateMemory() {
-        if (mAddr) {
-#ifdef _WIN32
-            _aligned_free(mAddr);
-#else
-            free(mAddr);
-#endif
-            mAddr = nullptr;
-        }
-    }
-    void* getAddr() {
-        return mAddr;
-    }
-private:
-    void* mAddr{nullptr};
-};
-
 struct BoundMemoryRange {
    VkDeviceSize offset;
    VkDeviceSize size;
@@ -181,7 +152,7 @@ struct MemoryInfo {
     // Set if the memory is backed by shared memory.
     std::optional<gfxstream::base::SharedMemory> sharedMemory;
 
-    std::shared_ptr<PrivateMemory> privateMemory;
+    std::optional<gfxstream::base::HeapMemory> heapMemory;
     // virtio-gpu blobs
     uint64_t blobId = 0;
 
@@ -220,6 +191,11 @@ struct InstanceInfo {
     uint32_t contextId = 0;
     std::unique_ptr<VVLContext> debugContext;
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
+    VkGuestCapabilityFlagsGOOGLE guestCapabilities = 0;
+
+    bool hasGuestCapability(VkGuestCapabilityFlagBitsGOOGLE capability) const {
+        return (guestCapabilities & capability) != 0;
+    }
 };
 
 struct PhysicalDeviceInfo {
@@ -533,8 +509,17 @@ struct DescriptorPoolInfo {
     uint32_t usedSets;
     std::vector<PoolState> pools;
 
-    std::unordered_map<VkDescriptorSet, VkDescriptorSet> allocedSetsToBoxed;
-    std::vector<uint64_t> poolIds;
+    // Unboxed VkDescriptorSet -> boxed VkDescriptorSet for every set currently
+    // allocated from this pool.
+    std::unordered_map<VkDescriptorSet, VkDescriptorSet> allocatedSetsUnboxedToBoxed;
+    // Only used when VulkanBatchedDescriptorSetUpdate is enabled: boxed
+    // VkDescriptorSet handles pre-minted at vkCreateDescriptorPool time (one per
+    // maxSets slot) and handed to the guest through
+    // vkCollectDescriptorPoolIdsGOOGLE, so that the guest can "allocate" sets
+    // without a host round trip. A slot is free while its boxed handle's
+    // underlying host set is VK_NULL_HANDLE. The guest-facing API calls these
+    // "pool ids"; they are descriptor set handles, not descriptor pool handles.
+    std::vector<uint64_t> preallocatedBoxedSets;
 };
 
 struct DescriptorSetInfo {

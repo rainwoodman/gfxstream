@@ -1,0 +1,9 @@
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repository(
+    name = "deqp",
+    build_file = "//third_party/deqp:BUILD.deqp.bazel",
+    commit = "eae519aaa6980b2a34ec07141bb19de3f6ddf69e",
+    dev_dependency = True,
+    remote = "https://android.googlesource.com/platform/external/deqp.git",
+)

@@ -28,17 +28,13 @@ struct ImageSupportInfo {
     VkFormat format;
     VkImageType type;
     VkImageTiling tiling;
-    VkImageUsageFlags usageFlags;
     VkImageCreateFlags createFlags;
 
     // Output parameters
     bool supported = false;
-    bool supportsExternalMemory = false;
-    bool requiresDedicatedAllocation = false;
+    VkImageUsageFlags usageFlags = 0;
     VkFormatProperties2 formatProps2{};
-    VkImageFormatProperties2 imageFormatProps2{};
-    VkExternalImageFormatProperties extFormatProps{};
-    std::optional<VkSamplerYcbcrConversionImageFormatProperties> samplerYcbcrConversionFormatProps;
+    uint32_t combinedImageSamplerDescriptorCount = 0;
 };
 
 class ImageSupport {
@@ -47,7 +43,7 @@ class ImageSupport {
 
     bool IsFormatSupported(VkFormat format) const;
 
-    const ImageSupportInfo* GetSupportedInfo(VkFormat format) const;
+    const ImageSupportInfo* GetSupportedInfo(VkFormat format, VkImageTiling tiling) const;
 
     std::optional<uint32_t> GetNumberOfNeededCombinedImageSamplerDescriptors(VkFormat format) const;
 

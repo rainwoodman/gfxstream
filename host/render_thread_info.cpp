@@ -70,6 +70,7 @@ void RenderThreadInfo::initGl(gl::EmulationGl* emulationGl) {
 #endif
 
 void RenderThreadInfo::setPuid(uint64_t puid) {
+    AutoLock lock(sRegistry.lock);
     m_puid = puid;
 #if GFXSTREAM_ENABLE_HOST_GLES
     if (m_glInfo) {
@@ -78,6 +79,15 @@ void RenderThreadInfo::setPuid(uint64_t puid) {
 #endif
     if (m_vkInfo) {
         m_vkInfo->ctx_id = puid;
+    }
+}
+
+void RenderThreadInfo::setProcessResources(
+    std::shared_ptr<const ProcessResources> processResources) {
+    AutoLock lock(sRegistry.lock);
+    m_processResources = std::move(processResources);
+    if (m_vkInfo) {
+        m_vkInfo->m_processResources = m_processResources;
     }
 }
 

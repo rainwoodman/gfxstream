@@ -377,6 +377,10 @@ uint32_t getMissingFeatures(const VkPhysicalDeviceFeatures& supported,
                             const VkPhysicalDeviceFeatures& requested,
                             std::string& outMissingFeatures);
 
+void clearShaderFloatControls2Features(VkPhysicalDeviceFeatures2* pFeatures);
+
+VkResult validateShaderFloatControls2CreateInfo(const VkDeviceCreateInfo* pCreateInfo);
+
 class YcbcrSamplerPool {
    public:
     YcbcrSamplerPool() {}
@@ -416,6 +420,9 @@ void addNeededBarriersToUseImage(VkImage image, uint32_t preQueueFamilyIndex,
                                  std::vector<VkImageMemoryBarrier>* preUseLayoutTransitionBarriers,
                                  std::vector<VkImageMemoryBarrier>* postUseLayoutTransitionBarriers,
                                  std::vector<VkImageMemoryBarrier>* postUseQueueTransferBarriers);
+
+uint32_t vkFormatToAhbFormat(VkFormat format);
+uint32_t ahbFormatBytesPerPixel(uint32_t ahbFormat);
 
 }  // namespace vk_util
 }  // namespace vk

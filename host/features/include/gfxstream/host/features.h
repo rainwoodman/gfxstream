@@ -431,6 +431,14 @@ struct FeatureSet {
         "app-compatiblity for common graphics layers in the guest.",
         &map,
     };
+    BoolFeatureInfo VulkanAllocateUncachedHostVisibleAsCached = {
+        "VulkanAllocateUncachedHostVisibleAsCached",
+        "If enabled, guest allocations from a host visible memory type that is neither host "
+        "cached nor device local (e.g. write-combined system memory) are made from a host "
+        "visible, coherent and cached memory type on the same heap. Has no effect with "
+        "ExternalBlob, SystemBlob, VulkanAllocateHostVisibleAsUdmabuf or VulkanAllocateHostMemory.",
+        &map,
+    };
     StringFeatureInfo VulkanExternalMemoryMode = {
         "VulkanExternalMemoryMode",
         "A string specifying the ExternalMemoryMode for VkEmulation to use, "
@@ -477,6 +485,13 @@ struct FeatureSet {
     U64FeatureInfo VulkanMaxSafeHeapSize = {
         "VulkanMaxSafeHeapSize",
         "If set to a non-zero value, limits the memory heap size reported to the guest (in bytes).",
+        &map,
+    };
+    BoolFeatureInfo VulkanDisableShaderFloatControls2 = {
+        "VulkanDisableShaderFloatControls2",
+        "If enabled, hides VK_KHR_shader_float_controls2 from the guest, clamps the guest-visible "
+        "Vulkan API version to 1.3, clears shaderFloatControls2 feature bits, and rejects device "
+        "creation requests that enable the extension or feature.",
         &map,
     };
 };

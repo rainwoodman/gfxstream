@@ -11,10 +11,20 @@ git_repository(
     remote = "https://android.googlesource.com/platform/external/libdrm.git",
 )
 
+# To develop or test with your local mesa repo, uncomment:
+#
+# new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
+# new_local_repository(
+#     name = "mesa",
+#     build_file = "//third_party/mesa:BUILD.mesa.bazel",
+#     path = "/path/to/your/local/mesa",
+# )
+#
+# and comment out:
 git_repository(
     name = "mesa",
     build_file = "//third_party/mesa:BUILD.mesa.bazel",
-    commit = "541c56aa3fd24027ed46ae350287d21dcd56c901",
+    commit = "6e4a77089e1db6cb6269ec694de3a1a131f96689",
     dev_dependency = True,
     patch_args = [
         "-p1",
@@ -22,6 +32,7 @@ git_repository(
     ],
     patches = [
         "//third_party/mesa:PATCH.0001_disable_vk_envvar_modification_for_testing.patch",
+        # PLACEHOLDER_FOR_MESA_MR_PATCH_FILE
     ],
     remote = "https://android.googlesource.com/platform/external/mesa3d.git",
 )
@@ -72,9 +83,14 @@ mesa_crate_deps.spec(
         "use-libc",
         "use-libc-auxv",
         "libc_errno",
+        "shm",
     ],
     package = "rustix",
     version = "1.0.7",
+)
+mesa_crate_deps.spec(
+    package = "mach2",
+    version = "0.7.0",
 )
 mesa_crate_deps.from_specs(
     name = "mesa_crate_deps",

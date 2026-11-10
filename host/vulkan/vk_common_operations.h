@@ -98,17 +98,19 @@ enum class AstcEmulationMode {
 struct AhbShapeKey {
     uint32_t width = 0;
     uint32_t height = 0;
+    uint32_t layers = 1;
     uint32_t ahbFormat = 0;
     uint64_t ahbUsage = 0;
 
     bool operator==(const AhbShapeKey& other) const {
-        return width == other.width && height == other.height && ahbFormat == other.ahbFormat &&
-               ahbUsage == other.ahbUsage;
+        return width == other.width && height == other.height && layers == other.layers &&
+               ahbFormat == other.ahbFormat && ahbUsage == other.ahbUsage;
     }
 };
 struct AhbShapeKeyHash {
     size_t operator()(const AhbShapeKey& key) const {
         return (static_cast<size_t>(key.width) << 48) ^ (static_cast<size_t>(key.height) << 32) ^
+               (static_cast<size_t>(key.layers) << 24) ^
                (static_cast<size_t>(key.ahbFormat) << 16) ^ static_cast<size_t>(key.ahbUsage);
     }
 };
@@ -139,7 +141,7 @@ class VkEmulation {
         bool enableYcbcrEmulation = false;
         bool guestVulkanOnly = false;
         bool useDedicatedAllocations = false;
-        uint32_t guestVulkanMaxApiVersion = VK_API_VERSION_1_3;
+        uint32_t guestVulkanMaxApiVersion = VK_API_VERSION_1_4;
         bool enableProtectedMemoryEmulation;
     };
     void initFeatures(Features features);
@@ -180,6 +182,8 @@ class VkEmulation {
     bool isSwapchainEnabled() const;
 
     bool isLavapipe() const;
+
+    bool isShaderFloatControls2Disabled() const;
 
     std::optional<VkPhysicalDeviceRobustness2FeaturesEXT> getRobustness2Features() const;
 
@@ -508,13 +512,6 @@ class VkEmulation {
     // caller (the probing image's own DeferredLayoutInfo) already holds.
     void stashPendingDeferredLayoutAhb(const VkImageCreateInfo* imageCreateInfo,
                                        AHardwareBuffer* ahb);
-
-    // Withdraws a previously stashed AHB from the pending pool, releasing the pool's reference.
-    // Must be called once the probing image imports the AHB as its own backing memory: at that
-    // point it is in use, and letting a ColorBuffer adopt it would alias two unrelated images
-    // onto one allocation. No-op if it was already adopted or never stashed.
-    void unstashPendingDeferredLayoutAhb(const VkImageCreateInfo* imageCreateInfo,
-                                         AHardwareBuffer* ahb);
 #endif
 
    private:
@@ -523,12 +520,8 @@ class VkEmulation {
     std::optional<host::RepresentativeColorBufferMemoryTypeInfo>
     findRepresentativeColorBufferMemoryTypeIndexLocked() REQUIRES(mMutex);
 
-    // For a given ImageSupportInfo, populates usageWithExternalHandles and
-    // requiresDedicatedAllocation. memoryTypeBits are populated later once the
-    // device is created, because that needs a test image to be created.
-    // If we don't support external memory, it's assumed dedicated allocations are
-    // not needed.
-    // Precondition: sVkEmulation instance has been created and ext memory caps known.
+    // Populates format and image support properties for a given ImageSupportInfo.
+    // Precondition: sVkEmulation instance has been created and device caps known.
     // Returns false if the query failed.
     bool populateImageFormatExternalMemorySupportInfo(VulkanDispatch* vk, VkPhysicalDevice physdev,
                                                       ImageSupportInfo* info);

@@ -28,13 +28,16 @@ namespace vk {
     // Set the mutable flag for RGB UNORM formats so that the created image can also be sampled in
     // the sRGB Colorspace. See
     // https://chromium-review.googlesource.com/c/chromiumos/platform/minigbm/+/3827672/comments/77db9cb3_60663a6a
-    // for details.
+    // for details. Keep each unflagged fallback entry after its flagged entry because
+    // GetSupportedInfo() returns the first supported match.
     std::vector<ImageFeatureCombo> combos = {
         // Cover all the gralloc formats
         {VK_FORMAT_R8G8B8A8_UNORM,
          VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT},
+        {VK_FORMAT_R8G8B8A8_UNORM},
         {VK_FORMAT_R8G8B8_UNORM,
          VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT},
+        {VK_FORMAT_R8G8B8_UNORM},
 
         {VK_FORMAT_R5G6B5_UNORM_PACK16},
         {VK_FORMAT_A1R5G5B5_UNORM_PACK16},
@@ -44,16 +47,21 @@ namespace vk {
 
         {VK_FORMAT_B8G8R8A8_UNORM,
          VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT},
+        {VK_FORMAT_B8G8R8A8_UNORM},
 
         {VK_FORMAT_B4G4R4A4_UNORM_PACK16,
          VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT},
+        {VK_FORMAT_B4G4R4A4_UNORM_PACK16},
         {VK_FORMAT_R4G4B4A4_UNORM_PACK16,
          VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT},
+        {VK_FORMAT_R4G4B4A4_UNORM_PACK16},
 
         {VK_FORMAT_R8_UNORM,
          VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT},
+        {VK_FORMAT_R8_UNORM},
         {VK_FORMAT_R16_UNORM,
          VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT},
+        {VK_FORMAT_R16_UNORM},
 
         {VK_FORMAT_A2R10G10B10_UINT_PACK32},
         {VK_FORMAT_A2R10G10B10_UNORM_PACK32},
@@ -81,26 +89,17 @@ namespace vk {
         VK_IMAGE_TILING_OPTIMAL,
     };
 
-    std::vector<VkImageUsageFlags> usageFlags = {
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-        VK_IMAGE_USAGE_SAMPLED_BIT,          VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-    };
-
     ImageSupport imageSupport = {};
 
     for (auto combo : combos) {
         for (auto t : types) {
             for (auto ti : tilings) {
-                for (auto u : usageFlags) {
-                    imageSupport.mSupportInfos.emplace_back(ImageSupportInfo{
-                        .format = combo.format,
-                        .type = t,
-                        .tiling = ti,
-                        .usageFlags = u,
-                        .createFlags = combo.createFlags,
-                    });
-                }
+                imageSupport.mSupportInfos.emplace_back(ImageSupportInfo{
+                    .format = combo.format,
+                    .type = t,
+                    .tiling = ti,
+                    .createFlags = combo.createFlags,
+                });
             }
         }
     }
@@ -115,23 +114,14 @@ namespace vk {
         {VK_FORMAT_D32_SFLOAT_S8_UINT},
     };
 
-    std::vector<VkImageUsageFlags> depthUsageFlags = {
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-        VK_IMAGE_USAGE_SAMPLED_BIT,          VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-    };
-
     for (auto combo : depthCombos) {
         for (auto t : types) {
-            for (auto u : depthUsageFlags) {
-                imageSupport.mSupportInfos.emplace_back(ImageSupportInfo{
-                    .format = combo.format,
-                    .type = t,
-                    .tiling = VK_IMAGE_TILING_OPTIMAL,
-                    .usageFlags = u,
-                    .createFlags = combo.createFlags,
-                });
-            }
+            imageSupport.mSupportInfos.emplace_back(ImageSupportInfo{
+                .format = combo.format,
+                .type = t,
+                .tiling = VK_IMAGE_TILING_OPTIMAL,
+                .createFlags = combo.createFlags,
+            });
         }
     }
 
@@ -156,14 +146,15 @@ bool ImageSupport::IsFormatSupported(VkFormat format) const {
     return supported;
 }
 
-const ImageSupportInfo* ImageSupport::GetSupportedInfo(VkFormat format) const {
+const ImageSupportInfo* ImageSupport::GetSupportedInfo(VkFormat format,
+                                                       VkImageTiling tiling) const {
     for (const auto& supportInfo : mSupportInfos) {
-        if (supportInfo.format == format && supportInfo.supported) {
+        if (supportInfo.format == format && supportInfo.tiling == tiling && supportInfo.supported) {
             return &supportInfo;
         }
     }
-    GFXSTREAM_WARNING("Could not find support info for format: %s [%d]", string_VkFormat(format),
-                      (int)format);
+    GFXSTREAM_WARNING("Could not find support info for format: %s [%d] and tiling: %d",
+                      string_VkFormat(format), (int)format, (int)tiling);
     return nullptr;
 }
 
@@ -172,25 +163,14 @@ std::optional<uint32_t> ImageSupport::GetNumberOfNeededCombinedImageSamplerDescr
         return 1;
     }
 
-    std::optional<uint32_t> needed;
+    uint32_t needed = 0;
     for (const ImageSupportInfo& info : mSupportInfos) {
-        if (info.format != format) {
-            continue;
-        }
-        if (!info.supported) {
-            continue;
-        }
-        if (!info.samplerYcbcrConversionFormatProps) {
-            continue;
-        }
-        if (needed) {
-            needed = std::max(*needed, info.samplerYcbcrConversionFormatProps->combinedImageSamplerDescriptorCount);
-        } else {
-            needed = info.samplerYcbcrConversionFormatProps->combinedImageSamplerDescriptorCount;
+        if (info.format == format && info.supported) {
+            needed = std::max(needed, info.combinedImageSamplerDescriptorCount);
         }
     }
 
-    return needed;
+    return needed > 0 ? std::optional<uint32_t>(needed) : std::nullopt;
 }
 
 }  // namespace vk

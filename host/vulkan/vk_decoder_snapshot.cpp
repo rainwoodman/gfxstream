@@ -980,7 +980,13 @@ class VkDecoderSnapshot::Impl {
     void vkResetDescriptorPool(gfxstream::base::BumpPool* pool,
                                VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
                                size_t apiCallPacketSize, VkResult input_result, VkDevice device,
-                               VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags) {}
+                               VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags) {
+        // Note: special implementation
+        if (input_result != VK_SUCCESS) return;
+        std::lock_guard<std::mutex> lock(mReconstructionMutex);
+        mReconstruction.removeDescendantsOfHandle((
+            uint64_t)(uintptr_t)unboxed_to_boxed_non_dispatchable_VkDescriptorPool(descriptorPool));
+    }
     void vkAllocateDescriptorSets(gfxstream::base::BumpPool* pool,
                                   VkSnapshotApiCallHandle apiCallHandle,
                                   const uint8_t* apiCallPacket, size_t apiCallPacketSize,
@@ -1965,11 +1971,36 @@ class VkDecoderSnapshot::Impl {
         const VkPhysicalDeviceSparseImageFormatInfo2* pFormatInfo, uint32_t* pPropertyCount,
         VkSparseImageFormatProperties2* pProperties) {}
 #endif
+#ifdef VK_KHR_device_group
+    void vkGetDeviceGroupPeerMemoryFeaturesKHR(gfxstream::base::BumpPool* pool,
+                                               VkSnapshotApiCallHandle apiCallHandle,
+                                               const uint8_t* apiCallPacket,
+                                               size_t apiCallPacketSize, VkDevice device,
+                                               uint32_t heapIndex, uint32_t localDeviceIndex,
+                                               uint32_t remoteDeviceIndex,
+                                               VkPeerMemoryFeatureFlags* pPeerMemoryFeatures) {}
+    void vkCmdSetDeviceMaskKHR(gfxstream::base::BumpPool* pool,
+                               VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
+                               size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+                               uint32_t deviceMask) {}
+    void vkCmdDispatchBaseKHR(gfxstream::base::BumpPool* pool,
+                              VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
+                              size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+                              uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
+                              uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ) {}
+#endif
 #ifdef VK_KHR_maintenance1
     void vkTrimCommandPoolKHR(gfxstream::base::BumpPool* pool,
                               VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
                               size_t apiCallPacketSize, VkDevice device, VkCommandPool commandPool,
                               VkCommandPoolTrimFlags flags) {}
+#endif
+#ifdef VK_KHR_device_group_creation
+    void vkEnumeratePhysicalDeviceGroupsKHR(
+        gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+        const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkResult input_result,
+        VkInstance instance, uint32_t* pPhysicalDeviceGroupCount,
+        VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties) {}
 #endif
 #ifdef VK_KHR_external_memory_capabilities
     void vkGetPhysicalDeviceExternalBufferPropertiesKHR(
@@ -1994,6 +2025,20 @@ class VkDecoderSnapshot::Impl {
                              const uint8_t* apiCallPacket, size_t apiCallPacketSize,
                              VkResult input_result, VkDevice device,
                              const VkSemaphoreGetFdInfoKHR* pGetFdInfo, int* pFd) {}
+#endif
+#ifdef VK_KHR_push_descriptor
+    void vkCmdPushDescriptorSetKHR(gfxstream::base::BumpPool* pool,
+                                   VkSnapshotApiCallHandle apiCallHandle,
+                                   const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                   VkCommandBuffer commandBuffer,
+                                   VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
+                                   uint32_t set, uint32_t descriptorWriteCount,
+                                   const VkWriteDescriptorSet* pDescriptorWrites) {}
+    void vkCmdPushDescriptorSetWithTemplateKHR(
+        gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+        const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+        VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set,
+        const void* pData) {}
 #endif
 #ifdef VK_KHR_descriptor_update_template
     void vkCreateDescriptorUpdateTemplateKHR(
@@ -2032,11 +2077,6 @@ class VkDecoderSnapshot::Impl {
                                               VkDescriptorSet descriptorSet,
                                               VkDescriptorUpdateTemplate descriptorUpdateTemplate,
                                               const void* pData) {}
-    void vkCmdPushDescriptorSetWithTemplateKHR(
-        gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
-        const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
-        VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set,
-        const void* pData) {}
 #endif
 #ifdef VK_KHR_create_renderpass2
     void vkCreateRenderPass2KHR(gfxstream::base::BumpPool* pool,
@@ -2179,6 +2219,47 @@ class VkDecoderSnapshot::Impl {
                                             const VkDescriptorSetLayoutCreateInfo* pCreateInfo,
                                             VkDescriptorSetLayoutSupport* pSupport) {}
 #endif
+#ifdef VK_KHR_draw_indirect_count
+    void vkCmdDrawIndirectCountKHR(gfxstream::base::BumpPool* pool,
+                                   VkSnapshotApiCallHandle apiCallHandle,
+                                   const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                   VkCommandBuffer commandBuffer, VkBuffer buffer,
+                                   VkDeviceSize offset, VkBuffer countBuffer,
+                                   VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
+                                   uint32_t stride) {}
+    void vkCmdDrawIndexedIndirectCountKHR(gfxstream::base::BumpPool* pool,
+                                          VkSnapshotApiCallHandle apiCallHandle,
+                                          const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                          VkCommandBuffer commandBuffer, VkBuffer buffer,
+                                          VkDeviceSize offset, VkBuffer countBuffer,
+                                          VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
+                                          uint32_t stride) {}
+#endif
+#ifdef VK_KHR_timeline_semaphore
+    void vkGetSemaphoreCounterValueKHR(gfxstream::base::BumpPool* pool,
+                                       VkSnapshotApiCallHandle apiCallHandle,
+                                       const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                       VkResult input_result, VkDevice device,
+                                       VkSemaphore semaphore, uint64_t* pValue) {}
+    void vkWaitSemaphoresKHR(gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+                             const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                             VkResult input_result, VkDevice device,
+                             const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout) {}
+    void vkSignalSemaphoreKHR(gfxstream::base::BumpPool* pool,
+                              VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
+                              size_t apiCallPacketSize, VkResult input_result, VkDevice device,
+                              const VkSemaphoreSignalInfo* pSignalInfo) {}
+#endif
+#ifdef VK_KHR_dynamic_rendering_local_read
+    void vkCmdSetRenderingAttachmentLocationsKHR(
+        gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+        const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+        const VkRenderingAttachmentLocationInfo* pLocationInfo) {}
+    void vkCmdSetRenderingInputAttachmentIndicesKHR(
+        gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+        const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+        const VkRenderingInputAttachmentIndexInfo* pInputAttachmentIndexInfo) {}
+#endif
 #ifdef VK_KHR_buffer_device_address
     void vkGetBufferDeviceAddressKHR(gfxstream::base::BumpPool* pool,
                                      VkSnapshotApiCallHandle apiCallHandle,
@@ -2212,6 +2293,16 @@ class VkDecoderSnapshot::Impl {
         VkDevice device, const VkPipelineExecutableInfoKHR* pExecutableInfo,
         uint32_t* pInternalRepresentationCount,
         VkPipelineExecutableInternalRepresentationKHR* pInternalRepresentations) {}
+#endif
+#ifdef VK_KHR_map_memory2
+    void vkMapMemory2KHR(gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+                         const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                         VkResult input_result, VkDevice device,
+                         const VkMemoryMapInfo* pMemoryMapInfo, void** ppData) {}
+    void vkUnmapMemory2KHR(gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+                           const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                           VkResult input_result, VkDevice device,
+                           const VkMemoryUnmapInfo* pMemoryUnmapInfo) {}
 #endif
 #ifdef VK_KHR_synchronization2
     void vkCmdSetEvent2KHR(gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
@@ -2552,6 +2643,12 @@ class VkDecoderSnapshot::Impl {
                                 size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
                                 uint32_t lineStippleFactor, uint16_t lineStipplePattern) {}
 #endif
+#ifdef VK_EXT_host_query_reset
+    void vkResetQueryPoolEXT(gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+                             const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                             VkDevice device, VkQueryPool queryPool, uint32_t firstQuery,
+                             uint32_t queryCount) {}
+#endif
 #ifdef VK_EXT_extended_dynamic_state
     void vkCmdSetCullModeEXT(gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
                              const uint8_t* apiCallPacket, size_t apiCallPacketSize,
@@ -2609,32 +2706,6 @@ class VkDecoderSnapshot::Impl {
                               VkStencilFaceFlags faceMask, VkStencilOp failOp, VkStencilOp passOp,
                               VkStencilOp depthFailOp, VkCompareOp compareOp) {}
 #endif
-#ifdef VK_EXT_host_image_copy
-    void vkCopyMemoryToImageEXT(gfxstream::base::BumpPool* pool,
-                                VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
-                                size_t apiCallPacketSize, VkResult input_result, VkDevice device,
-                                const VkCopyMemoryToImageInfo* pCopyMemoryToImageInfo) {}
-    void vkCopyImageToMemoryEXT(gfxstream::base::BumpPool* pool,
-                                VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
-                                size_t apiCallPacketSize, VkResult input_result, VkDevice device,
-                                const VkCopyImageToMemoryInfo* pCopyImageToMemoryInfo) {}
-    void vkCopyImageToImageEXT(gfxstream::base::BumpPool* pool,
-                               VkSnapshotApiCallHandle apiCallHandle, const uint8_t* apiCallPacket,
-                               size_t apiCallPacketSize, VkResult input_result, VkDevice device,
-                               const VkCopyImageToImageInfo* pCopyImageToImageInfo) {}
-    void vkTransitionImageLayoutEXT(gfxstream::base::BumpPool* pool,
-                                    VkSnapshotApiCallHandle apiCallHandle,
-                                    const uint8_t* apiCallPacket, size_t apiCallPacketSize,
-                                    VkResult input_result, VkDevice device,
-                                    uint32_t transitionCount,
-                                    const VkHostImageLayoutTransitionInfo* pTransitions) {}
-    void vkGetImageSubresourceLayout2EXT(gfxstream::base::BumpPool* pool,
-                                         VkSnapshotApiCallHandle apiCallHandle,
-                                         const uint8_t* apiCallPacket, size_t apiCallPacketSize,
-                                         VkDevice device, VkImage image,
-                                         const VkImageSubresource2* pSubresource,
-                                         VkSubresourceLayout2* pLayout) {}
-#endif
 #ifdef VK_EXT_swapchain_maintenance1
     void vkReleaseSwapchainImagesEXT(gfxstream::base::BumpPool* pool,
                                      VkSnapshotApiCallHandle apiCallHandle,
@@ -2681,6 +2752,14 @@ class VkDecoderSnapshot::Impl {
                              const uint8_t* apiCallPacket, size_t apiCallPacketSize,
                              VkDevice device, VkObjectType objectType, uint64_t objectHandle,
                              VkPrivateDataSlot privateDataSlot, uint64_t* pData) {}
+#endif
+#ifdef VK_EXT_image_compression_control
+    void vkGetImageSubresourceLayout2EXT(gfxstream::base::BumpPool* pool,
+                                         VkSnapshotApiCallHandle apiCallHandle,
+                                         const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                         VkDevice device, VkImage image,
+                                         const VkImageSubresource2* pSubresource,
+                                         VkSubresourceLayout2* pLayout) {}
 #endif
 #ifdef VK_EXT_extended_dynamic_state2
     void vkCmdSetPatchControlPointsEXT(gfxstream::base::BumpPool* pool,
@@ -2749,6 +2828,15 @@ class VkDecoderSnapshot::Impl {
         mReconstruction.setApiTrace(apiCallHandle, apiCallPacket, apiCallPacketSize);
         mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1,
                                             (uint64_t)(uintptr_t)device);
+        mReconstruction.addHandleDependency(
+            (const uint64_t*)(&handle), 1,
+            (uint64_t)(uintptr_t)unboxed_to_boxed_non_dispatchable_VkDescriptorSet(descriptorSet));
+        mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1, imageInfoCount,
+                                            pImageInfos);
+        mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1, bufferInfoCount,
+                                            pBufferInfos);
+        mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1, bufferViewCount,
+                                            pBufferViews);
         mReconstruction.forEachHandleAddApi((const uint64_t*)(&handle), 1, apiCallHandle,
                                             VkReconstruction::CREATED);
         mReconstruction.setCreatedHandlesForApi(apiCallHandle, (const uint64_t*)(&handle), 1);
@@ -2766,7 +2854,11 @@ class VkDecoderSnapshot::Impl {
                                          VkSnapshotApiCallHandle apiCallHandle,
                                          const uint8_t* apiCallPacket, size_t apiCallPacketSize,
                                          VkCommandBuffer commandBuffer,
-                                         VkCommandBufferResetFlags flags) {}
+                                         VkCommandBufferResetFlags flags) {
+        // Note: special implementation
+        std::lock_guard<std::mutex> lock(mReconstructionMutex);
+        mReconstruction.removeDescendantsOfHandle((uint64_t)(uintptr_t)commandBuffer);
+    }
     void vkCommandBufferHostSyncGOOGLE(gfxstream::base::BumpPool* pool,
                                        VkSnapshotApiCallHandle apiCallHandle,
                                        const uint8_t* apiCallPacket, size_t apiCallPacketSize,
@@ -2916,6 +3008,15 @@ class VkDecoderSnapshot::Impl {
         mReconstruction.setApiTrace(apiCallHandle, apiCallPacket, apiCallPacketSize);
         mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1,
                                             (uint64_t)(uintptr_t)device);
+        mReconstruction.addHandleDependency(
+            (const uint64_t*)(&handle), 1,
+            (uint64_t)(uintptr_t)unboxed_to_boxed_non_dispatchable_VkDescriptorSet(descriptorSet));
+        mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1, imageInfoCount,
+                                            pImageInfos);
+        mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1, bufferInfoCount,
+                                            pBufferInfos);
+        mReconstruction.addHandleDependency((const uint64_t*)(&handle), 1, bufferViewCount,
+                                            pBufferViews);
         mReconstruction.forEachHandleAddApi((const uint64_t*)(&handle), 1, apiCallHandle,
                                             VkReconstruction::CREATED);
         mReconstruction.setCreatedHandlesForApi(apiCallHandle, (const uint64_t*)(&handle), 1);
@@ -5615,6 +5716,40 @@ void VkDecoderSnapshot::vkGetPhysicalDeviceSparseImageFormatProperties2KHR(
         pPropertyCount, pProperties);
 }
 #endif
+#ifdef VK_KHR_device_group
+void VkDecoderSnapshot::vkGetDeviceGroupPeerMemoryFeaturesKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkDevice device, uint32_t heapIndex,
+    uint32_t localDeviceIndex, uint32_t remoteDeviceIndex,
+    VkPeerMemoryFeatureFlags* pPeerMemoryFeatures) {
+    mImpl->vkGetDeviceGroupPeerMemoryFeaturesKHR(
+        pool, apiCallHandle, apiCallPacket, apiCallPacketSize, device, heapIndex, localDeviceIndex,
+        remoteDeviceIndex, pPeerMemoryFeatures);
+}
+#endif
+#ifdef VK_KHR_device_group
+void VkDecoderSnapshot::vkCmdSetDeviceMaskKHR(gfxstream::base::BumpPool* pool,
+                                              VkSnapshotApiCallHandle apiCallHandle,
+                                              const uint8_t* apiCallPacket,
+                                              size_t apiCallPacketSize,
+                                              VkCommandBuffer commandBuffer, uint32_t deviceMask) {
+    mImpl->vkCmdSetDeviceMaskKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                 commandBuffer, deviceMask);
+}
+#endif
+#ifdef VK_KHR_device_group
+void VkDecoderSnapshot::vkCmdDispatchBaseKHR(gfxstream::base::BumpPool* pool,
+                                             VkSnapshotApiCallHandle apiCallHandle,
+                                             const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                             VkCommandBuffer commandBuffer, uint32_t baseGroupX,
+                                             uint32_t baseGroupY, uint32_t baseGroupZ,
+                                             uint32_t groupCountX, uint32_t groupCountY,
+                                             uint32_t groupCountZ) {
+    mImpl->vkCmdDispatchBaseKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                commandBuffer, baseGroupX, baseGroupY, baseGroupZ, groupCountX,
+                                groupCountY, groupCountZ);
+}
+#endif
 #ifdef VK_KHR_maintenance1
 void VkDecoderSnapshot::vkTrimCommandPoolKHR(gfxstream::base::BumpPool* pool,
                                              VkSnapshotApiCallHandle apiCallHandle,
@@ -5623,6 +5758,17 @@ void VkDecoderSnapshot::vkTrimCommandPoolKHR(gfxstream::base::BumpPool* pool,
                                              VkCommandPoolTrimFlags flags) {
     mImpl->vkTrimCommandPoolKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize, device,
                                 commandPool, flags);
+}
+#endif
+#ifdef VK_KHR_device_group_creation
+void VkDecoderSnapshot::vkEnumeratePhysicalDeviceGroupsKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkResult input_result,
+    VkInstance instance, uint32_t* pPhysicalDeviceGroupCount,
+    VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties) {
+    mImpl->vkEnumeratePhysicalDeviceGroupsKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                              input_result, instance, pPhysicalDeviceGroupCount,
+                                              pPhysicalDeviceGroupProperties);
 }
 #endif
 #ifdef VK_KHR_external_memory_capabilities
@@ -5666,6 +5812,28 @@ void VkDecoderSnapshot::vkGetSemaphoreFdKHR(gfxstream::base::BumpPool* pool,
                                device, pGetFdInfo, pFd);
 }
 #endif
+#ifdef VK_KHR_push_descriptor
+void VkDecoderSnapshot::vkCmdPushDescriptorSetKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+    VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set,
+    uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites) {
+    mImpl->vkCmdPushDescriptorSetKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                     commandBuffer, pipelineBindPoint, layout, set,
+                                     descriptorWriteCount, pDescriptorWrites);
+}
+#endif
+#ifdef VK_KHR_push_descriptor
+void VkDecoderSnapshot::vkCmdPushDescriptorSetWithTemplateKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+    VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set,
+    const void* pData) {
+    mImpl->vkCmdPushDescriptorSetWithTemplateKHR(pool, apiCallHandle, apiCallPacket,
+                                                 apiCallPacketSize, commandBuffer,
+                                                 descriptorUpdateTemplate, layout, set, pData);
+}
+#endif
 #ifdef VK_KHR_descriptor_update_template
 void VkDecoderSnapshot::vkCreateDescriptorUpdateTemplateKHR(
     gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
@@ -5697,17 +5865,6 @@ void VkDecoderSnapshot::vkUpdateDescriptorSetWithTemplateKHR(
     mImpl->vkUpdateDescriptorSetWithTemplateKHR(pool, apiCallHandle, apiCallPacket,
                                                 apiCallPacketSize, device, descriptorSet,
                                                 descriptorUpdateTemplate, pData);
-}
-#endif
-#ifdef VK_KHR_descriptor_update_template
-void VkDecoderSnapshot::vkCmdPushDescriptorSetWithTemplateKHR(
-    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
-    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
-    VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set,
-    const void* pData) {
-    mImpl->vkCmdPushDescriptorSetWithTemplateKHR(pool, apiCallHandle, apiCallPacket,
-                                                 apiCallPacketSize, commandBuffer,
-                                                 descriptorUpdateTemplate, layout, set, pData);
 }
 #endif
 #ifdef VK_KHR_create_renderpass2
@@ -5862,6 +6019,79 @@ void VkDecoderSnapshot::vkGetDescriptorSetLayoutSupportKHR(
                                               device, pCreateInfo, pSupport);
 }
 #endif
+#ifdef VK_KHR_draw_indirect_count
+void VkDecoderSnapshot::vkCmdDrawIndirectCountKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+    VkBuffer buffer, VkDeviceSize offset, VkBuffer countBuffer, VkDeviceSize countBufferOffset,
+    uint32_t maxDrawCount, uint32_t stride) {
+    mImpl->vkCmdDrawIndirectCountKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                     commandBuffer, buffer, offset, countBuffer, countBufferOffset,
+                                     maxDrawCount, stride);
+}
+#endif
+#ifdef VK_KHR_draw_indirect_count
+void VkDecoderSnapshot::vkCmdDrawIndexedIndirectCountKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+    VkBuffer buffer, VkDeviceSize offset, VkBuffer countBuffer, VkDeviceSize countBufferOffset,
+    uint32_t maxDrawCount, uint32_t stride) {
+    mImpl->vkCmdDrawIndexedIndirectCountKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                            commandBuffer, buffer, offset, countBuffer,
+                                            countBufferOffset, maxDrawCount, stride);
+}
+#endif
+#ifdef VK_KHR_timeline_semaphore
+void VkDecoderSnapshot::vkGetSemaphoreCounterValueKHR(gfxstream::base::BumpPool* pool,
+                                                      VkSnapshotApiCallHandle apiCallHandle,
+                                                      const uint8_t* apiCallPacket,
+                                                      size_t apiCallPacketSize,
+                                                      VkResult input_result, VkDevice device,
+                                                      VkSemaphore semaphore, uint64_t* pValue) {
+    mImpl->vkGetSemaphoreCounterValueKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                         input_result, device, semaphore, pValue);
+}
+#endif
+#ifdef VK_KHR_timeline_semaphore
+void VkDecoderSnapshot::vkWaitSemaphoresKHR(gfxstream::base::BumpPool* pool,
+                                            VkSnapshotApiCallHandle apiCallHandle,
+                                            const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                            VkResult input_result, VkDevice device,
+                                            const VkSemaphoreWaitInfo* pWaitInfo,
+                                            uint64_t timeout) {
+    mImpl->vkWaitSemaphoresKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize, input_result,
+                               device, pWaitInfo, timeout);
+}
+#endif
+#ifdef VK_KHR_timeline_semaphore
+void VkDecoderSnapshot::vkSignalSemaphoreKHR(gfxstream::base::BumpPool* pool,
+                                             VkSnapshotApiCallHandle apiCallHandle,
+                                             const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                             VkResult input_result, VkDevice device,
+                                             const VkSemaphoreSignalInfo* pSignalInfo) {
+    mImpl->vkSignalSemaphoreKHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize, input_result,
+                                device, pSignalInfo);
+}
+#endif
+#ifdef VK_KHR_dynamic_rendering_local_read
+void VkDecoderSnapshot::vkCmdSetRenderingAttachmentLocationsKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+    const VkRenderingAttachmentLocationInfo* pLocationInfo) {
+    mImpl->vkCmdSetRenderingAttachmentLocationsKHR(pool, apiCallHandle, apiCallPacket,
+                                                   apiCallPacketSize, commandBuffer, pLocationInfo);
+}
+#endif
+#ifdef VK_KHR_dynamic_rendering_local_read
+void VkDecoderSnapshot::vkCmdSetRenderingInputAttachmentIndicesKHR(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkCommandBuffer commandBuffer,
+    const VkRenderingInputAttachmentIndexInfo* pInputAttachmentIndexInfo) {
+    mImpl->vkCmdSetRenderingInputAttachmentIndicesKHR(pool, apiCallHandle, apiCallPacket,
+                                                      apiCallPacketSize, commandBuffer,
+                                                      pInputAttachmentIndexInfo);
+}
+#endif
 #ifdef VK_KHR_buffer_device_address
 void VkDecoderSnapshot::vkGetBufferDeviceAddressKHR(gfxstream::base::BumpPool* pool,
                                                     VkSnapshotApiCallHandle apiCallHandle,
@@ -5924,6 +6154,26 @@ void VkDecoderSnapshot::vkGetPipelineExecutableInternalRepresentationsKHR(
     mImpl->vkGetPipelineExecutableInternalRepresentationsKHR(
         pool, apiCallHandle, apiCallPacket, apiCallPacketSize, input_result, device,
         pExecutableInfo, pInternalRepresentationCount, pInternalRepresentations);
+}
+#endif
+#ifdef VK_KHR_map_memory2
+void VkDecoderSnapshot::vkMapMemory2KHR(gfxstream::base::BumpPool* pool,
+                                        VkSnapshotApiCallHandle apiCallHandle,
+                                        const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                        VkResult input_result, VkDevice device,
+                                        const VkMemoryMapInfo* pMemoryMapInfo, void** ppData) {
+    mImpl->vkMapMemory2KHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize, input_result,
+                           device, pMemoryMapInfo, ppData);
+}
+#endif
+#ifdef VK_KHR_map_memory2
+void VkDecoderSnapshot::vkUnmapMemory2KHR(gfxstream::base::BumpPool* pool,
+                                          VkSnapshotApiCallHandle apiCallHandle,
+                                          const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                          VkResult input_result, VkDevice device,
+                                          const VkMemoryUnmapInfo* pMemoryUnmapInfo) {
+    mImpl->vkUnmapMemory2KHR(pool, apiCallHandle, apiCallPacket, apiCallPacketSize, input_result,
+                             device, pMemoryUnmapInfo);
 }
 #endif
 #ifdef VK_KHR_synchronization2
@@ -6480,6 +6730,16 @@ void VkDecoderSnapshot::vkCmdSetLineStippleEXT(
                                   commandBuffer, lineStippleFactor, lineStipplePattern);
 }
 #endif
+#ifdef VK_EXT_host_query_reset
+void VkDecoderSnapshot::vkResetQueryPoolEXT(gfxstream::base::BumpPool* pool,
+                                            VkSnapshotApiCallHandle apiCallHandle,
+                                            const uint8_t* apiCallPacket, size_t apiCallPacketSize,
+                                            VkDevice device, VkQueryPool queryPool,
+                                            uint32_t firstQuery, uint32_t queryCount) {
+    mImpl->vkResetQueryPoolEXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize, device,
+                               queryPool, firstQuery, queryCount);
+}
+#endif
 #ifdef VK_EXT_extended_dynamic_state
 void VkDecoderSnapshot::vkCmdSetCullModeEXT(gfxstream::base::BumpPool* pool,
                                             VkSnapshotApiCallHandle apiCallHandle,
@@ -6606,53 +6866,6 @@ void VkDecoderSnapshot::vkCmdSetStencilOpEXT(gfxstream::base::BumpPool* pool,
                                 commandBuffer, faceMask, failOp, passOp, depthFailOp, compareOp);
 }
 #endif
-#ifdef VK_EXT_host_image_copy
-void VkDecoderSnapshot::vkCopyMemoryToImageEXT(
-    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
-    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkResult input_result, VkDevice device,
-    const VkCopyMemoryToImageInfo* pCopyMemoryToImageInfo) {
-    mImpl->vkCopyMemoryToImageEXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
-                                  input_result, device, pCopyMemoryToImageInfo);
-}
-#endif
-#ifdef VK_EXT_host_image_copy
-void VkDecoderSnapshot::vkCopyImageToMemoryEXT(
-    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
-    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkResult input_result, VkDevice device,
-    const VkCopyImageToMemoryInfo* pCopyImageToMemoryInfo) {
-    mImpl->vkCopyImageToMemoryEXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
-                                  input_result, device, pCopyImageToMemoryInfo);
-}
-#endif
-#ifdef VK_EXT_host_image_copy
-void VkDecoderSnapshot::vkCopyImageToImageEXT(gfxstream::base::BumpPool* pool,
-                                              VkSnapshotApiCallHandle apiCallHandle,
-                                              const uint8_t* apiCallPacket,
-                                              size_t apiCallPacketSize, VkResult input_result,
-                                              VkDevice device,
-                                              const VkCopyImageToImageInfo* pCopyImageToImageInfo) {
-    mImpl->vkCopyImageToImageEXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
-                                 input_result, device, pCopyImageToImageInfo);
-}
-#endif
-#ifdef VK_EXT_host_image_copy
-void VkDecoderSnapshot::vkTransitionImageLayoutEXT(
-    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
-    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkResult input_result, VkDevice device,
-    uint32_t transitionCount, const VkHostImageLayoutTransitionInfo* pTransitions) {
-    mImpl->vkTransitionImageLayoutEXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
-                                      input_result, device, transitionCount, pTransitions);
-}
-#endif
-#ifdef VK_EXT_host_image_copy
-void VkDecoderSnapshot::vkGetImageSubresourceLayout2EXT(
-    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
-    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkDevice device, VkImage image,
-    const VkImageSubresource2* pSubresource, VkSubresourceLayout2* pLayout) {
-    mImpl->vkGetImageSubresourceLayout2EXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
-                                           device, image, pSubresource, pLayout);
-}
-#endif
 #ifdef VK_EXT_swapchain_maintenance1
 void VkDecoderSnapshot::vkReleaseSwapchainImagesEXT(
     gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
@@ -6704,6 +6917,15 @@ void VkDecoderSnapshot::vkGetPrivateDataEXT(gfxstream::base::BumpPool* pool,
                                             VkPrivateDataSlot privateDataSlot, uint64_t* pData) {
     mImpl->vkGetPrivateDataEXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize, device,
                                objectType, objectHandle, privateDataSlot, pData);
+}
+#endif
+#ifdef VK_EXT_image_compression_control
+void VkDecoderSnapshot::vkGetImageSubresourceLayout2EXT(
+    gfxstream::base::BumpPool* pool, VkSnapshotApiCallHandle apiCallHandle,
+    const uint8_t* apiCallPacket, size_t apiCallPacketSize, VkDevice device, VkImage image,
+    const VkImageSubresource2* pSubresource, VkSubresourceLayout2* pLayout) {
+    mImpl->vkGetImageSubresourceLayout2EXT(pool, apiCallHandle, apiCallPacket, apiCallPacketSize,
+                                           device, image, pSubresource, pLayout);
 }
 #endif
 #ifdef VK_EXT_extended_dynamic_state2

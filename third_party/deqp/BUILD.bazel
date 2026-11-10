@@ -1,0 +1,4 @@
+exports_files([
+    "BUILD.deqp.bazel",
+    "deqp.MODULE.bazel",
+])
